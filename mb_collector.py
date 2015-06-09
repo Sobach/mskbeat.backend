@@ -77,6 +77,7 @@ class InstagramThread(threading.Thread):
 			try:
 				photo_data = requests.get(url).json()
 				link = photo_data['data']['images']['standard_resolution']['url']
+				print datetime.datetime.now().isoformat(), ' INSTAGRAM: ', link
 			except:
 				print 'INSTAERROR', photo_data
 			else:
