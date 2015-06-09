@@ -17,16 +17,13 @@ import json
 from time import sleep
 import datetime
 
-TW_CONSUMER_KEY = 'ZdQE1uZRRi4BO2ol3HVva32vs'
-TW_CONSUMER_SECRET = 'HifP3pbRhwYYpP5s1GzffptYOLoJc9XiR8u4yZMIsoSbOD9Pws'
-TW_ACCESS_TOKEN_KEY = '279961332-Ajz1PWyzW8KiGT78NXZVyMdu5N0woCsK5G87bHN9'
-TW_ACCESS_TOKEN_SECRET = 'MqIFTyjA7wlILos3dtwVAbKHC8xyLBt0DCAclsb9jYcws'
-IG_ACCESS_TOKEN = '425515587.db42a44.9d6b5d2914e14b61889bba362d285f97'
+# CONSTANTS
+from settings import *
 
 tw_api = TwitterAPI(TW_CONSUMER_KEY, TW_CONSUMER_SECRET, TW_ACCESS_TOKEN_KEY, TW_ACCESS_TOKEN_SECRET)
-redis_db = redis.StrictRedis(host='localhost', port=6379, db=0)
+redis_db = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 PySQLPool.getNewPool().maxActiveConnections = 1
-mysql_db = PySQLPool.getNewConnection(username='root', password='', host='localhost', db='mskbeat')
+mysql_db = PySQLPool.getNewConnection(username=MYSQL_USER, password=MYSQL_PASSWORD, host=MYSQL_HOST, db=MYSQL_DB)
 query = PySQLPool.getNewQuery(mysql_db, commitOnEnd=True)
 query.Query('SET NAMES utf8mb4;')
 query.Query('SET CHARACTER SET utf8mb4;')
