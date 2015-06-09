@@ -1,0 +1,4 @@
+/venv
+*.pyc
+*.rdb
+*.DS_Store
