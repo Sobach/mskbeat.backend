@@ -55,11 +55,13 @@ class TwitterStreamThread(threading.Thread):
 				for item in stream:
 					if 'coordinates' in item and item['coordinates']:
 						print datetime.datetime.now().isoformat(), item['coordinates']['coordinates'], item['text']
-						q = 'INSERT INTO tweets(id, text, lat, lng) VALUES ({}, "{}", {}, {});'.format(
+						q = 'INSERT INTO tweets(id, text, lat, lng, tstamp) VALUES ({}, "{}", {}, {}, "{}");'.format(
 							item['id_str'], 
 							MySQLdb.escape_string(item['text'].encode('utf-8', 'replace')),
 							item['coordinates']['coordinates'][1],
-							item['coordinates']['coordinates'][0])
+							item['coordinates']['coordinates'][0],
+							datetime.datetime(item['created_at'][4:], '%b %d %H:%M:%S +0000 %Y')
+							)
 						exec_mysql(q)
 						get_media(item['entities'], item['id_str'])
 					elif 'disconnect' in item:
