@@ -29,5 +29,6 @@ while True:
 	for item in r:
 		print item['id'], item['created_at']
 		query.Query('UPDATE tweets SET tstamp="{}" WHERE id={}'.format(datetime.datetime.strptime(item['created_at'][4:], '%b %d %H:%M:%S +0000 %Y'), item['id']))
+	if len(r) < 1:
+		break
 	sleep(15)
-	break
