@@ -23,12 +23,14 @@ query.Query('SET CHARACTER SET utf8mb4;')
 query.Query('SET character_set_connection=utf8mb4;')
 
 while True:
+	no_answer = True
 	query.Query('SELECT * FROM tweets WHERE ISNULL(tstamp) LIMIT 50;')
 	ids = ','.join([str(x['id']) for x in query.record])
 	r = tw_api.request('statuses/lookup', {'id':ids})
 	for item in r:
 		print item['id'], item['created_at']
 		query.Query('UPDATE tweets SET tstamp="{}" WHERE id={}'.format(datetime.datetime.strptime(item['created_at'][4:], '%b %d %H:%M:%S +0000 %Y'), item['id']))
-	if len(r) < 1:
+		no_answer = False
+	if no_answer:
 		break
 	sleep(15)
