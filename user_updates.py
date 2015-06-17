@@ -32,7 +32,7 @@ while True:
 	for item in r:
 		print item['id'], item['created_at']
 		query.Query('UPDATE tweets SET user={} WHERE id={}'.format(item['user']['id'], item['id']))
-		tweet_ids.pop(tweet_ids.index(STR(item['id'])))
+		tweet_ids.pop(tweet_ids.index(str(item['id'])))
 	for tid in tweet_ids:
 		print tid, 'Not found'
 		query.Query('UPDATE tweets SET user=0 WHERE id={}'.format(tid))
