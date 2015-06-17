@@ -55,7 +55,7 @@ class TwitterStreamThread(threading.Thread):
 				for item in stream:
 					if 'coordinates' in item and item['coordinates']:
 						print datetime.datetime.now().isoformat(), item['coordinates']['coordinates'], item['text']
-						q = 'INSERT INTO tweets(id, text, lat, lng, tstamp, user) VALUES ({}, "{}", {}, {}, "{}", {});'.format(
+						q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user) VALUES ({}, "{}", {}, {}, "{}", {});'.format(
 							item['id_str'], 
 							MySQLdb.escape_string(item['text'].encode('utf-8', 'replace')),
 							item['coordinates']['coordinates'][1],
