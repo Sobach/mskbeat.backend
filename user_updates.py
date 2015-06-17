@@ -24,15 +24,15 @@ query.Query('SET character_set_connection=utf8mb4;')
 
 while True:
 	query.Query('SELECT * FROM tweets WHERE ISNULL(user) LIMIT 50;')
-	tweet_ids = query.record
+	tweet_ids = [str(x['id']) for x in query.record]
 	if len(tweet_ids) == 0:
 		break
-	ids = ','.join([str(x['id']) for x in tweet_ids])
+	ids = ','.join(tweet_ids)
 	r = tw_api.request('statuses/lookup', {'id':ids})
 	for item in r:
 		print item['id'], item['created_at']
 		query.Query('UPDATE tweets SET user={} WHERE id={}'.format(item['user']['id'], item['id']))
-		tweet_ids.pop(tweet_ids.index(item['id']))
+		tweet_ids.pop(tweet_ids.index(STR(item['id'])))
 	for tid in tweet_ids:
 		print tid, 'Not found'
 		query.Query('UPDATE tweets SET user=0 WHERE id={}'.format(tid))
