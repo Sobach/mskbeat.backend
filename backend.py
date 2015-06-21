@@ -99,8 +99,9 @@ class InstagramStreamThread(threading.Thread):
 				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl.SSLError, socket.error) as e:
 					pass
 				else:
-					last_time[i] = int(time.time())
-					medialist = get_ig_data(resp.json(), medialist)
+					if resp.ok:
+						last_time[i] = int(time.time())
+						medialist = get_ig_data(resp.json(), medialist)
 				time.sleep(3)
 
 class VKCheckinsThread(threading.Thread):
