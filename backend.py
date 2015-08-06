@@ -73,10 +73,10 @@ class InstagramHelperThread(threading.Thread):
 	def run(self):
 		while True:
 			data = json.loads(redis_db.blpop('ig_queue')[1])
-			url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN_1)
 			try:
+				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN_1)
 				photo_data = requests.get(url, stream=False, timeout=10)
-			except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl.SSLError, socket.error) as e:
+			except (IndexError, ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl.SSLError, socket.error) as e:
 				pass
 			else:
 				if photo_data.ok:
@@ -137,13 +137,13 @@ class MskBeatUI(npyscreen.FormBaseNew):
 		while True:
 			self.timer.value = ' ' * 31 + datetime.datetime.now().strftime('%H:%M:%S %d %b %Y')
 			self.timer.display()
-			self.tw_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="t";')[0].values()[0]) + '     ' + redis_db.get('tw_last')
+			self.tw_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="t";')[0][0].values()[0]) + '     ' + redis_db.get('tw_last')
 			self.tw_stat.display()
-			self.vk_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="v";')[0].values()[0]) + '     ' + redis_db.get('vk_last')
+			self.vk_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="v";')[0][0].values()[0]) + '     ' + redis_db.get('vk_last')
 			self.vk_stat.display()
-			self.ig_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="i";')[0].values()[0]) + '     ' + redis_db.get('ig_last')
+			self.ig_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="i";')[0][0].values()[0]) + '     ' + redis_db.get('ig_last')
 			self.ig_stat.display()
-			self.media_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM media;')[0].values()[0]) + '     ' + redis_db.get('media_last')
+			self.media_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM media;')[0][0].values()[0]) + '     ' + redis_db.get('media_last')
 			self.media_stat.display()
 			time.sleep(1)
 
