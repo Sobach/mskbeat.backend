@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# MSK.BEAT backend
+# MSK.PULSE backend
 
 # DATABASES
 import redis
@@ -167,8 +167,8 @@ def get_twitter_media(entities, tw_id):
 
 def exec_mysql(cmd):
 	query = PySQLPool.getNewQuery(mysql_db, commitOnEnd=True)
-	query.Query(cmd)
-	return query.record
+	result = query.Query(cmd)
+	return query.record, result
 
 def get_vk_data(data):
 	try:
@@ -182,11 +182,13 @@ def get_vk_data(data):
 			lat = item['latitude']
 			lng = item['longitude']
 			iscopy = 0
-		else:
+		elif 'geo' in wall_posts[item['id']]:
 			coordinates = wall_posts[item['id']]['geo']['coordinates'].split(' ')
 			lat = float(coordinates[0])
 			lng = float(coordinates[1])
 			iscopy = 1
+		else:
+			continue
 		if 'text' in item:
 			text = item['text']
 		else:
