@@ -10,7 +10,6 @@ import MySQLdb
 import datetime
 import threading
 import time
-import datetime
 
 # NEW
 import math
