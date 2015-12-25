@@ -53,7 +53,7 @@ class TwitterStreamThread(threading.Thread):
 							int('Instagram' in item['source'])
 							)
 						exec_mysql(q)
-						redis_db.set('tw_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+						redis_db.set('statistics:tw_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 						get_twitter_media(item['entities'], item['id_str'])
 					elif 'disconnect' in item:
 						event = item['disconnect']
@@ -72,7 +72,7 @@ class TwitterStreamThread(threading.Thread):
 class InstagramHelperThread(threading.Thread):
 	def run(self):
 		while True:
-			data = json.loads(redis_db.blpop('ig_queue')[1])
+			data = json.loads(redis_db.blpop('queue:instagram')[1])
 			try:
 				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN_1)
 				photo_data = requests.get(url, stream=False, timeout=10)
@@ -83,7 +83,7 @@ class InstagramHelperThread(threading.Thread):
 					link = photo_data.json()['data']['images']['standard_resolution']['url']
 					q = 'INSERT INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(data[0], link)
 					exec_mysql(q)
-					redis_db.set('media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+					redis_db.set('statistics:media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 			time.sleep(1)
 
 class InstagramStreamThread(threading.Thread):
@@ -119,7 +119,7 @@ class VKCheckinsThread(threading.Thread):
 			else:
 				if resp.ok:
 					data = resp.json()
-					redis_db.set('vk_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+					redis_db.set('statistics:vk_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 					get_vk_data(data)
 					from_time = f_time
 				time.sleep(2)
@@ -137,13 +137,13 @@ class MskBeatUI(npyscreen.FormBaseNew):
 		while True:
 			self.timer.value = ' ' * 31 + datetime.datetime.now().strftime('%H:%M:%S %d %b %Y')
 			self.timer.display()
-			self.tw_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="t";')[0][0].values()[0]) + '     ' + redis_db.get('tw_last')
+			self.tw_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="t";')[0][0].values()[0]) + '     ' + redis_db.get('statistics:tw_last')
 			self.tw_stat.display()
-			self.vk_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="v";')[0][0].values()[0]) + '     ' + redis_db.get('vk_last')
+			self.vk_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="v";')[0][0].values()[0]) + '     ' + redis_db.get('statistics:vk_last')
 			self.vk_stat.display()
-			self.ig_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="i";')[0][0].values()[0]) + '     ' + redis_db.get('ig_last')
+			self.ig_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM tweets WHERE network="i";')[0][0].values()[0]) + '     ' + redis_db.get('statistics:ig_last')
 			self.ig_stat.display()
-			self.media_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM media;')[0][0].values()[0]) + '     ' + redis_db.get('media_last')
+			self.media_stat.value = '{:10,d}'.format(exec_mysql('SELECT COUNT(*) FROM media;')[0][0].values()[0]) + '     ' + redis_db.get('statistics:media_last')
 			self.media_stat.display()
 			time.sleep(1)
 
@@ -158,11 +158,11 @@ def get_twitter_media(entities, tw_id):
 			q = 'INSERT INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(
 				tw_id, item['media_url_https'])
 			exec_mysql(q)
-			redis_db.set('media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+			redis_db.set('statistics:media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 	if 'urls' in entities:
 		for url in entities['urls']:
 			if url['expanded_url'].startswith('https://instagram.com/'):
-				redis_db.rpush('ig_queue', json.dumps([tw_id, url['expanded_url']]))
+				redis_db.rpush('queue:instagram', json.dumps([tw_id, url['expanded_url']]))
 	return media
 
 def exec_mysql(cmd):
@@ -208,7 +208,7 @@ def get_vk_data(data):
 				q = 'INSERT INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(
 				item['id'], wall_posts[item['id']]['attachments'][0]['photo']['photo_807'])
 			exec_mysql(q)
-			redis_db.set('media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+			redis_db.set('statistics:media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 
 def get_ig_data(data, medialist):
 	for item in data['data']:
@@ -237,15 +237,15 @@ def get_ig_data(data, medialist):
 			q = 'INSERT IGNORE INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(
 				item['id'], media_url)
 			exec_mysql(q)
-	redis_db.set('ig_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
-	redis_db.set('media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:ig_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 	return medialist
 
 def prepare_ui():
-	redis_db.set('tw_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
-	redis_db.set('vk_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
-	redis_db.set('ig_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
-	redis_db.set('media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:tw_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:vk_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:ig_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
+	redis_db.set('statistics:media_last', datetime.datetime.now().strftime('%H:%M:%S %d %b %Y'))
 
 def main():
 	prepare_ui()
