@@ -3,3 +3,4 @@
 *.rdb
 *.DS_Store
 settings.py
+/.ipythonb_checkpoints
