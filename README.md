@@ -1,11 +1,17 @@
-# MSK.BEAT BackEnd [Oxenaforda]
+# PULSE.MSK.RU BackEnd [Oxenaforda]
 
 ## About
 
-MSK.BEAT is a draft of new media: users construct agenda and content through their pesonal actions. 
+PULSE.MSK.RU is a draft of new media: users construct agenda and content through their pesonal actions. 
 Social media spreading and geolocation functions allow to get real-time city-buzz. 
 Using filtering, clustering, and some ML technics, it's possible to recognize events at the time of occurrence.
 Event content is extracted from disparate messages and media objects. Produced news are being classified.
+
+## FAQ [draft]
+
+### Why Oxenaforda?
+
+\- I decided to mark major versions with ancient cities names. Oxenaforda stands for Oxford. And Oxford was selected because of this paper: [Editorial Algorithms: Using Social Media to Discover and Report Local News](http://www.aaai.org/ocs/index.php/ICWSM/ICWSM15/paper/view/10593)
 
 ## Change Log
 

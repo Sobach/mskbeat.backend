@@ -4,7 +4,7 @@
 MSK BEAT SETTINGS
 - databases credentials
 - SM credentials
-- city locations
+- city location
 - sliding window size
 """
 
@@ -33,13 +33,18 @@ IG_ACCESS_TOKEN_2 = ''
 VK_ACCESS_TOKEN = ''
 
 # Locations
-"""
-TBD: Make one "locations" square and, produce all others using it. BBOX should be the main and the only
-"""
-TW_LOCATIONS = 'lng1,lat1,lng2,lat2'
-VK_LOCATIONS = {'lat':0, 'lng':0}
-IG_LOCATIONS = [(0, 0),(0, 0)] # (lng, lat) pairs as Instagram has small radius around every point
-BBOX = [float(x) for x in TW_LOCATIONS.split(',')]
+# Main bounding box: 4 floats (longitude1, latitude1, longitude2, latitude2)
+BBOX = []
+
+# Twitter bbox: string representation
+TW_LOCATIONS = ','.join(str(BBOX))
+
+# VKontakte: currently one central point
+VK_LOCATIONS = {'lng':BBOX[0] + (BBOX[2]-BBOX[0])/2, 'lat':BBOX[1] + (BBOX[3]-BBOX[1])/2}
+
+# Instagram bbox: list of tuples (lng, lat), number of points, each covers circle with 5km radius
+from utilities import get_circles_centers
+IG_LOCATIONS = get_circles_centers(BBOX, radius=5000)
 
 # Used networks
 """
