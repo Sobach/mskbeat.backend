@@ -9,7 +9,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ## FAQ [draft]
 
-### Why Oxenaforda?
+#### Why Oxenaforda?
 
 \- I decided to mark major versions with ancient cities names. Oxenaforda stands for Oxford. And Oxford was selected because of this paper: [Editorial Algorithms: Using Social Media to Discover and Report Local News](http://www.aaai.org/ocs/index.php/ICWSM/ICWSM15/paper/view/10593)
 
@@ -20,6 +20,8 @@ Event content is extracted from disparate messages and media objects. Produced n
 #### Added:
 
 - settings_template.py with comments;
+
+- emulator.py - separate file for CollectorEmulator with commandline tools;
 
 #### Changed:
 
@@ -55,8 +57,10 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - collector.py: contains classes for online data parsing in Instagram, Twitter, and VKontakte. Also has console UI. TBD: remove console UI; rewrite output queues (like in CollectorEmulator); fix bugs;
 
-- detector.py: currently main working file; Event, EventDetector, and CollectorEmulator classes inside (TBD: remove emulator to a separate file with commandline tools);
+- detector.py: currently main working file; Event and EventDetector classes;
 
 - detector_legacy.py: "ancient" project for event detector, currently deprecated, but some code bieces could be useful.
 
 - settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings.
+
+- emulator.py: CollectorEmulator class.
