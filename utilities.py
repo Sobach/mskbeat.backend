@@ -20,3 +20,9 @@ def get_circles_centers(bbox, radius=5000):
 	x_marks = [x for x in drange(bbox[0], bbox[2], radius_x)]
 	y_marks = [y for y in drange(bbox[1], bbox[3], radius_y)]
 	return [x for x in product(x_marks[0::2], y_marks[0::2])] + [x for x in product(x_marks[1::2], y_marks[1::2])]
+
+def exec_mysql(cmd, connection):
+	from PySQLPool import getNewQuery
+	query = getNewQuery(connection, commitOnEnd=True)
+	result = query.Query(cmd)
+	return query.record, result

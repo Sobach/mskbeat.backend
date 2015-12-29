@@ -15,7 +15,7 @@ from uuid import uuid4
 
 # DATABASE
 from redis import StrictRedis
-from PySQLPool import getNewPool, getNewConnection, getNewQuery
+from PySQLPool import getNewPool, getNewConnection
 from MySQLdb import escape_string
 
 # MATH
@@ -34,6 +34,7 @@ from nltk.tokenize import TreebankWordTokenizer
 
 # CONSTANTS
 from settings import *
+from utilities import exec_mysql
 
 class EventDetector():
 	"""
@@ -390,95 +391,6 @@ class Event():
 			except ZeroDivisionError:
 				core_score = 0
 			self.messages[msg_id]['tokens_score'] = vocab_score + core_score
-
-class CollectorEmulator():
-	"""
-	Emulator for real-time messages Collector (currently implemented in backend.py)
-	Goal: online clustering methods testing.
-	Fast-forward ratio - the more ratio, the faster messages arrive (compared to IRL)
-	Start timeout - step several seconds on initialisation
-	When data ends, puts into queue special tweet with id=0 and text='TheEnd'.
-	"""
-
-	def __init__(self, mysql_con, redis_con, dataset=None, fast_forward_ratio = 1, start_timeout = 10, run_on_init = True):
-		"""
-		dataset (List[Dict]): tweets database dump, collected using PySQLPool. Available fields:
-			id, text, lat, lng, tstamp, user, network, iscopy
-		"""
-		self.redis = redis_con
-		self.mysql = mysql_con
-
-		# Loading default dataset
-		if not dataset:
-			q = '''SELECT * FROM tweets_origins WHERE tstamp >= '2015-07-01 12:00:00' AND tstamp <= '2015-07-02 12:00:00';'''
-			dataset = exec_mysql(q, self.mysql)[0]
-
-		# Recalculating publish timestamp for messages, according to current time
-		self.fast_forward_ratio = fast_forward_ratio
-		self.raw_data = sorted(list(dataset), key=lambda x: x['tstamp'], reverse=False)
-		self.old_init = self.raw_data[0]['tstamp']
-		self.new_init = datetime.now() + timedelta(seconds = start_timeout)
-		for i in range(len(self.raw_data)):
-			seconds2add = (self.raw_data[i]['tstamp'] - self.old_init).total_seconds()/fast_forward_ratio
-			self.raw_data[i]['tstamp'] = self.new_init + timedelta(seconds = seconds2add)
-	
-		# These vars are required for logging and writing status updates
-		self.new_end = self.raw_data[-1]['tstamp']
-		self.duration = (self.new_end - self.new_init).total_seconds()
-		self.total_msgs = len(self.raw_data)
-		self.i = 0
-		self.rotator = ('\\', '|', '/', '-')
-		self.previous_out = ''
-
-		# Starting emulation (turned on by default)
-		if run_on_init:
-			self.run()
-
-	def run(self):
-		"""
-		Loop: Poping and publishing messages with tstamp <= current
-		Runs until raw_data list is empty, then pushes "final" message
-		"""
-		while True:
-			try:
-				if self.raw_data[0]['tstamp'] <= datetime.now():
-					self.push_msg(self.raw_data.pop(0))
-			except IndexError:
-				self.push_msg({'id':0, 'text':'TheEnd', 'lat':0, 'lng':0, 'tstamp':datetime.now(), 'user':0, 'network':'u', 'iscopy':0})
-				break
-
-	def push_msg(self, message):
-		"""
-		Function for processing every single meaasge as if it is real Collector.
-		Currently message is:
-		(1) being sent to redis with lifetime for 1 hour (from settings - TIME_SLIDING_WINDOW)
-		(2) being dumped in MySQL datatable
-		"""
-		self.redis.set("message:{}".format(message['id']), pdumps(message))
-		self.redis.expire("message:{}".format(message['id']), TIME_SLIDING_WINDOW/self.fast_forward_ratio)
-		message['text'] = escape_string(message['text'])
-		q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{id}", "{text}", {lat}, {lng}, "{tstamp}", {user}, "{network}", {iscopy});'.format(**message)
-		exec_mysql(q, self.mysql)
-		self.log_process(message)
-
-	def log_process(self, message):
-		"""
-		Logging the whole process: using stdout, all logging is being made in one line. 
-		Percentage is computed from start time to end time, also current msg # is shown.
-		"""
-		percent = '{}%'.format(round(100*float((message['tstamp'] - self.new_init).total_seconds())/self.duration, 2))
-		stdout.write('\r'.rjust(len(self.previous_out), ' '))
-		self.previous_out = '\rEmulating: ('+self.rotator[self.i%4]+') Complete: ' + percent.ljust(7, ' ') + 'Messages: {}/{}'.format(self.i, self.total_msgs)
-		stdout.flush()
-		stdout.write(self.previous_out)
-		self.i+=1
-		if message['id'] == 0:
-			stdout.write('\n')
-
-def exec_mysql(cmd, connection):
-	query = getNewQuery(connection, commitOnEnd=True)
-	result = query.Query(cmd)
-	return query.record, result
 
 if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
