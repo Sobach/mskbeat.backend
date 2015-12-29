@@ -70,6 +70,8 @@ class EventDetector():
 			self.merge_slices_to_events(slice_clusters)
 			self.dump_current_events()
 			if self.interrupter:
+				for event in self.current_events:
+					event.backup()
 				break
 			sleep(3)
 
@@ -272,12 +274,13 @@ class Event():
 		weight (float): legacy from density outliers detector - how many standart deviations between current and reference distances to kNN
 	"""
 
-	def __init__(self, mysql_con, points):
+	def __init__(self, mysql_con, redis_con, points):
 		self.id = uuid4()
 		self.created = datetime.now()
 		self.updated = datetime.now()
 
 		self.mysql = mysql_con
+		self.redis = redis_con
 		self.morph = MorphAnalyzer()
 		self.tokenizer = TreebankWordTokenizer()
 		self.word = compile(r'^\w+$', flags = UNICODE | IGNORECASE)
@@ -325,6 +328,7 @@ class Event():
 		exec_mysql(q, self.mysql)
 		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['({},{})'.format(x, self.id) for x in self.messages.keys()]))
 		exec_mysql(q, self.mysql)
+		self.redis.delete("event:{}".format(self.id))
 
 	def get_messages_data(self, ids=None):
 		if not ids:
