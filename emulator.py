@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# MSK.PULSE Collector Emylator
+# MSK.PULSE backend
 
 # SYSTEM
 from datetime import datetime, timedelta
@@ -13,7 +13,7 @@ from redis.exceptions import ResponseError
 
 # CONSTANTS
 from settings import *
-from utilities import exec_mysql
+from utilities import get_mysql_con, exec_mysql
 
 class CollectorEmulator():
 	"""
@@ -152,11 +152,7 @@ if __name__ == "__main__":
 		from PySQLPool import getNewPool, getNewConnection
 		from utilities import exec_mysql
 		redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
-		getNewPool().maxActiveConnections = 1
-		mysql_db = getNewConnection(username=MYSQL_USER, password=MYSQL_PASSWORD, host=MYSQL_HOST, db=MYSQL_DB)
-		exec_mysql('SET NAMES utf8mb4;', mysql_db)
-		exec_mysql('SET CHARACTER SET utf8mb4;', mysql_db)
-		exec_mysql('SET character_set_connection=utf8mb4;', mysql_db)
+		mysql_db = 	get_mysql_con()
 		dataset = exec_mysql(q, mysql_db)[0]
 		if args.action == 'run':
 			emulator = CollectorEmulator(mysql_db, redis_db, dataset=dataset, fast_forward_ratio=args.fastforward, start_timeout=args.timeout, run_on_init = True, truncate_on_init = False)

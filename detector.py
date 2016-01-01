@@ -4,18 +4,15 @@
 
 # SYSTEM
 from datetime import datetime, timedelta
-from pprint import pprint
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
 from pickle import dumps as pdumps, loads as ploads
-from sys import stdout
 from time import sleep
 from json import dumps as jdumps
 from uuid import uuid4
 
 # DATABASE
 from redis import StrictRedis
-from PySQLPool import getNewPool, getNewConnection
 from MySQLdb import escape_string
 
 # MATH
@@ -34,7 +31,7 @@ from nltk.tokenize import TreebankWordTokenizer
 
 # CONSTANTS
 from settings import *
-from utilities import exec_mysql
+from utilities import get_mysql_con, exec_mysql
 
 class EventDetector():
 	"""
@@ -398,12 +395,6 @@ class Event():
 
 if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
-	getNewPool().maxActiveConnections = 1
-	mysql_db = getNewConnection(username=MYSQL_USER, password=MYSQL_PASSWORD, host=MYSQL_HOST, db=MYSQL_DB)
-	exec_mysql('SET NAMES utf8mb4;', mysql_db)
-	exec_mysql('SET CHARACTER SET utf8mb4;', mysql_db)
-	exec_mysql('SET character_set_connection=utf8mb4;', mysql_db)
-
-	#emulator = CollectorEmulator(mysql_db, redis_db, fast_forward_ratio=60, start_timeout=0)
+	mysql_db = get_mysql_con()
 	detector = EventDetector(mysql_db, redis_db, BBOX, fast_forward_ratio=60)
 	detector.run()

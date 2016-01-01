@@ -47,6 +47,8 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ## Third-party dependencies:
 
+- NETWORKING: requests, TwitterAPI;
+
 - DATABASES: redis, PySQLPool, MySQLdb;
 
 - CALCULUS: numpy, networkx, sklearn, scipy;
