@@ -7,6 +7,7 @@ from threading import Thread
 from json import dumps as jdumps, loads as jloads
 from time import sleep, time
 from datetime import datetime
+from pickle import dumps as pdumps
 
 # DATABASE
 from redis import StrictRedis
@@ -48,6 +49,9 @@ class TwitterStreamThread(Thread):
 							int('Instagram' in item['source'])
 							)
 						exec_mysql(q, self.mysql)
+						message = {'id':item['id_str'], 'text':item['text'].encode('utf-8', 'replace'),	'lat':item['coordinates']['coordinates'][1], 'lng':	item['coordinates']['coordinates'][0], 'tstamp': 	datetime.strptime(item['created_at'][4:], '%b %d %H:%M:%S +0000 %Y'), 'user': item['user']['id_str'], 'network': 1, 'iscopy': int('Instagram' in item['source'])}
+						self.redis.set("message:{}".format(message['id']), pdumps(message))
+						self.redis.expire("message:{}".format(message['id']), int(TIME_SLIDING_WINDOW))
 						self.redis.set('statistics:tw_last', datetime.now().strftime('%H:%M:%S %d %b %Y'))
 						self.get_twitter_media(item['entities'], item['id_str'])
 					elif 'disconnect' in item:
@@ -146,6 +150,9 @@ class InstagramStreamThread(Thread):
 					datetime.fromtimestamp(int(item['created_time'])),
 					user)
 				exec_mysql(q, self.mysql)
+				message = {'id':item['id'], 'text':text.encode('utf-8', 'replace'),	'lat':lat, 'lng':lng, 'tstamp': 	datetime.fromtimestamp(int(item['created_time'])), 'user':user, 'network':2, 'iscopy':0}
+				self.redis.set("message:{}".format(message['id']), pdumps(message))
+				self.redis.expire("message:{}".format(message['id']), int(TIME_SLIDING_WINDOW))
 				q = 'INSERT IGNORE INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(
 					item['id'], media_url)
 				exec_mysql(q, self.mysql)
@@ -205,7 +212,7 @@ class VKontakteStreamThread(Thread):
 			else:
 				text = ''
 			if lat and lng:
-				q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{}", "{}", {}, {}, "{}", {}, 2, {});'.format(
+				q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{}", "{}", {}, {}, "{}", {}, 3, {});'.format(
 					item['id'], 
 					escape_string(text.encode('utf-8', 'replace')),
 					lat,
@@ -215,6 +222,9 @@ class VKontakteStreamThread(Thread):
 					iscopy
 					)
 				exec_mysql(q, self.mysql)
+				message = {'id':item['id'], 'text':text.encode('utf-8', 'replace'),	'lat':lat, 'lng':lng, 'tstamp': 	datetime.fromtimestamp(int(item['date'])), 'user':item['user_id'], 'network':3, 'iscopy':iscopy}
+				self.redis.set("message:{}".format(message['id']), pdumps(message))
+				self.redis.expire("message:{}".format(message['id']), int(TIME_SLIDING_WINDOW))
 				if 'attachments' in wall_posts[item['id']] and 'photo' in wall_posts[item['id']]['attachments'][0] and 'photo_807' in wall_posts[item['id']]['attachments'][0]['photo']:
 					q = 'INSERT INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(
 					item['id'], wall_posts[item['id']]['attachments'][0]['photo']['photo_807'])
@@ -225,11 +235,11 @@ if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
 	
-	#t = TwitterStreamThread(mysql_db, redis_db)
-	#ih = InstagramHelperThread(mysql_db, redis_db)
-	#i = InstagramStreamThread(mysql_db, redis_db)
+	t = TwitterStreamThread(mysql_db, redis_db)
+	ih = InstagramHelperThread(mysql_db, redis_db)
+	i = InstagramStreamThread(mysql_db, redis_db)
 	v = VKontakteStreamThread(mysql_db, redis_db)
 	v.start()
-	#t.start()
-	#ih.start()
-	#i.start()
+	t.start()
+	ih.start()
+	i.start()
