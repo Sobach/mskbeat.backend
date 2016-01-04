@@ -180,9 +180,10 @@ class VKontakteStreamThread(Thread):
 				else:
 					if resp.ok:
 						data = resp.json()
-						self.redis.set('statistics:vk_last', datetime.now().strftime('%H:%M:%S %d %b %Y'))
-						medialist = self.get_vk_data(data, medialist)
-						self.last_time[i] = api_time
+						if 'response' in data.keys():
+							self.redis.set('statistics:vk_last', datetime.now().strftime('%H:%M:%S %d %b %Y'))
+							medialist = self.get_vk_data(data, medialist)
+							self.last_time[i] = api_time
 					sleep(2)
 
 	def get_vk_data(self, data, medialist):

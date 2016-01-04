@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 # MSK PULSE backend
-# Number of separate utilities without common input
+# Number of separate utilities without common import
 
 def drange(start, stop, step):
 	r = start
