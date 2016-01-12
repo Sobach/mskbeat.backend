@@ -27,6 +27,14 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - Event class: new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
 
+- Collector class: rewritten to accomplish new requirements, UI removed; 
+
+- Collector class: VK messages collector updated from one central point to the grid;
+
+#### Removed:
+
+- Data sources networks one-letter codes deprecated;
+
 ### [v1.0.0 Oxenaforda] - 2015-12-25
 
 #### Added:
@@ -47,13 +55,13 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ## Third-party dependencies:
 
-- NETWORKING: requests, TwitterAPI;
+- NETWORKING: [requests](http://docs.python-requests.org/en/latest/), [TwitterAPI](https://github.com/geduldig/TwitterAPI);
 
-- DATABASES: redis, PySQLPool, MySQLdb;
+- DATABASES: [redis](https://pypi.python.org/pypi/redis), [PySQLPool](https://pythonhosted.org/PySQLPool/tutorial.html), [MySQLdb](http://mysql-python.sourceforge.net/);
 
-- CALCULUS: numpy, networkx, sklearn, scipy;
+- CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/);
 
-- NLTK: pymorphy2, nltk.
+- NLTK: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
 
 ## Files:
 
@@ -61,8 +69,8 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - detector.py: currently main working file; Event and EventDetector classes;
 
-- detector_legacy.py: "ancient" project for event detector, currently deprecated, but some code bieces could be useful.
+- settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings;
 
-- settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings.
+- emulator.py: CollectorEmulator class;
 
-- emulator.py: CollectorEmulator class.
+- utilities.py: number of separate utilities, used in other parts and classes, without common importing.
