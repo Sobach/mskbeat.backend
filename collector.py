@@ -29,8 +29,23 @@ from settings import *
 from utilities import get_mysql_con, exec_mysql
 
 class TwitterStreamThread(Thread):
+	"""
+	Twitter collector class. Inherits from threading.Thread, so can be used in parallel with other collector classes.
+	Requires TW_LOCATIONS, TW_CONSUMER_KEY, TW_CONSUMER_SECRET, TW_ACCESS_TOKEN_KEY, and TW_ACCESS_TOKEN_SECRET constants to get access token.
+	If filter_bounds is True, requires BOUNDS constant.
+	Object dumps messages to MySQL, saves it to Redis with expiration in TIME_SLIDING_WINDOW seconds, and updates statistics:tw_last key in Redis.
+	Additionaly, if message was shared from Instagram, it's url is being pushed to queue:instagram key in Redis.
+	"""
 
 	def __init__(self, mysql_con, redis_con, filter_bounds = True):
+		"""
+		Initialization.
+
+		Args:
+			mysql_con (PySQLPoolConnection): MySQL connection Object
+			redis_con (StrictRedis): RedisDB connection Object
+			filter_bounds (bool): whether to drop surplus messages outside the bounds
+		"""
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
@@ -39,6 +54,10 @@ class TwitterStreamThread(Thread):
 			self.city_polygon = BOUNDS
 
 	def run(self):
+		"""
+		Infinity loop for running twitter collector.
+		Used recomendations for error handling to make it loop for ever.
+		"""
 		while True:
 			try:
 				stream = self.tw_api.request('statuses/filter', {'locations':TW_LOCATIONS}).get_iterator()
@@ -76,6 +95,10 @@ class TwitterStreamThread(Thread):
 				pass
 
 	def get_twitter_media(self, entities, tw_id):
+		"""
+		Method is used to extract media data from tweets. Called from infinity loop. 
+		In case, if url contains Instagram photo (not shown in 'media'), pushes data to queue:instagram Redis key.
+		"""
 		if 'media' in entities:
 			for item in entities['media']:
 				q = 'INSERT INTO media(tweet_id, url) VALUES ("{}", "{}");'.format(tw_id, item['media_url_https'])
@@ -86,13 +109,30 @@ class TwitterStreamThread(Thread):
 					self.redis.rpush('queue:instagram', jdumps([tw_id, url['expanded_url']]))
 
 class InstagramHelperThread(Thread):
+	"""
+	Instagram media collector assistant. Inherits from threading.Thread, so can be used in parallel with other collector classes.
+	Requires IG_ACCESS_TOKEN_1 constants to get access token.
+	Object gets instagram links from queue:instagram Redis key and gets all the data from the link.
+	Saves data to media MySQL table.
+	"""
 
 	def __init__(self, mysql_con, redis_con):
+		"""
+		Initialization.
+
+		Args:
+			mysql_con (PySQLPoolConnection): MySQL connection Object
+			redis_con (StrictRedis): RedisDB connection Object
+		"""
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
 
 	def run(self):
+		"""
+		Infinity loop: wait for any new item in queue:instagram Redis list, pop it and process.
+		Wait for 2 seconds, go to the begining.
+		"""
 		while True:
 			data = jloads(self.redis.blpop('queue:instagram')[1])
 			try:
@@ -108,8 +148,21 @@ class InstagramHelperThread(Thread):
 			sleep(2)
 
 class InstagramStreamThread(Thread):
+	"""
+	Instagram collector class. Deals with Instagram API. Inherits from threading.Thread, so can be used in parallel with other collector classes.
+	Requires IG_LOCATIONS, IG_ACCESS_TOKEN_1 constants.	If filter_bounds is True, requires BOUNDS constant.
+	Object dumps messages to MySQL, saves it to Redis with expiration in TIME_SLIDING_WINDOW seconds, and updates statistics:ig_last key in Redis.
+	"""
 
 	def __init__(self, mysql_con, redis_con, filter_bounds = True):
+		"""
+		Initialization.
+
+		Args:
+			mysql_con (PySQLPoolConnection): MySQL connection Object
+			redis_con (StrictRedis): RedisDB connection Object
+			filter_bounds (bool): whether to drop surplus messages outside the bounds
+		"""
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
@@ -118,6 +171,10 @@ class InstagramStreamThread(Thread):
 			self.city_polygon = BOUNDS
 
 	def run(self):
+		"""
+		Infinity loop for running Instagram collector.
+		Alternately checks every location from IG_LOCATIONS, and saves last check timestamp.
+		"""
 		while True:
 			medialist = []
 			for i in range(len(IG_LOCATIONS)):
@@ -136,6 +193,12 @@ class InstagramStreamThread(Thread):
 				sleep(2)
 
 	def get_ig_data(self, data, medialist):
+		"""
+		Method for parsing data, collected from Instagram search API endpoint.
+		Looks for coordinates, text, and other attributes for every message.
+		Dumps message to MySQL and Redis with expiration, updates statistics.
+		List medialist is used to minimize overlaping for multiple locations.
+		"""
 		for item in data['data']:
 			if item['id'] in medialist:
 				continue
@@ -170,8 +233,21 @@ class InstagramStreamThread(Thread):
 		return medialist
 
 class VKontakteStreamThread(Thread):
+	"""
+	VKontakte collector class. Deals with VK API. Inherits from threading.Thread, so can be used in parallel with other collector classes.
+	Requires VK_LOCATIONS, VK_ACCESS_TOKEN constants.	If filter_bounds is True, requires BOUNDS constant.
+	Object dumps messages to MySQL, saves it to Redis with expiration in TIME_SLIDING_WINDOW seconds, and updates statistics:ig_last key in Redis.
+	"""
 
 	def __init__(self, mysql_con, redis_con, filter_bounds = True):
+		"""
+		Initialization.
+
+		Args:
+			mysql_con (PySQLPoolConnection): MySQL connection Object
+			redis_con (StrictRedis): RedisDB connection Object
+			filter_bounds (bool): whether to drop surplus messages outside the bounds
+		"""
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
@@ -180,6 +256,10 @@ class VKontakteStreamThread(Thread):
 			self.city_polygon = BOUNDS
 
 	def run(self):
+		"""
+		Infinity loop for running VKontakte collector.
+		Alternately checks every location from VK_LOCATIONS, and saves last check timestamp.
+		"""
 		while True:
 			medialist = []
 			for i in range(len(VK_LOCATIONS)):
@@ -200,6 +280,33 @@ class VKontakteStreamThread(Thread):
 					sleep(2)
 
 	def get_vk_data(self, data, medialist):
+		"""
+		Method for parsing data, collected from VK API  custom function endpoint.
+		Looks for coordinates, text, and other attributes for every message.
+		Dumps message to MySQL and Redis with expiration, updates statistics.
+		List medialist is used to minimize overlaping for multiple locations.
+		Stored function:
+		---
+		var places = API.places.getCheckins({
+			"latitude":Args.lat,
+			"longitude":Args.lng,
+			"count":100,
+			"timestamp":Args.from_time
+		});
+
+		if(places["items"].length == 0){
+			return {"wall":[], "places":places};
+		}
+		var wallIds = [];
+		var i = 0;
+		while(i < places["items"].length){
+			wallIds = wallIds + [places["items"][i]["id"]];
+			i = i + 1;
+		}
+		var walls = API.wall.getById({"posts": wallIds});
+		return {"wall":walls, "places":places};
+		---
+		"""
 		try:
 			wall_posts = {'{}_{}'.format(x['from_id'], x['id']): x for x in data['response']['wall']}
 		except:
