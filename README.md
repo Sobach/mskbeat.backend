@@ -63,7 +63,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/), [shapely](http://toblerity.org/shapely/);
 
-- NLTK: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
+- NLP: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
 
 ## Files:
 

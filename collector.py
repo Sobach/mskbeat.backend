@@ -248,6 +248,8 @@ class VKontakteStreamThread(Thread):
 		return medialist
 
 if __name__ == '__main__':
+	import logging
+	logging.basicConfig(level=logging.CRITICAL)
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
 	
