@@ -21,17 +21,22 @@ from socket import error as soc_error
 from ssl import SSLError as ssl_SSLError
 from TwitterAPI import TwitterAPI, TwitterRequestError, TwitterConnectionError
 
+# MATH
+from shapely.geometry import Point
+
 # CONSTANTS
 from settings import *
 from utilities import get_mysql_con, exec_mysql
 
 class TwitterStreamThread(Thread):
 
-	def __init__(self, mysql_con, redis_con):
+	def __init__(self, mysql_con, redis_con, filter_bounds = True):
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
 		self.tw_api = TwitterAPI(TW_CONSUMER_KEY, TW_CONSUMER_SECRET, TW_ACCESS_TOKEN_KEY, TW_ACCESS_TOKEN_SECRET)
+		if filter_bounds:
+			self.city_polygon = BOUNDS
 
 	def run(self):
 		while True:
@@ -39,6 +44,8 @@ class TwitterStreamThread(Thread):
 				stream = self.tw_api.request('statuses/filter', {'locations':TW_LOCATIONS}).get_iterator()
 				for item in stream:
 					if 'coordinates' in item and item['coordinates']:
+						if self.city_polygon and self.city_polygon.disjoint(Point(item['coordinates']['coordinates'][0],item['coordinates']['coordinates'][1])):
+							continue
 						q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{}", "{}", {}, {}, "{}", {}, 1, {});'.format(
 							item['id_str'], 
 							escape_string(item['text'].encode('utf-8', 'replace')),
@@ -102,11 +109,13 @@ class InstagramHelperThread(Thread):
 
 class InstagramStreamThread(Thread):
 
-	def __init__(self, mysql_con, redis_con):
+	def __init__(self, mysql_con, redis_con, filter_bounds = True):
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
 		self.last_time = [int(time()) - 60]*len(IG_LOCATIONS)
+		if filter_bounds:
+			self.city_polygon = BOUNDS
 
 	def run(self):
 		while True:
@@ -143,6 +152,8 @@ class InstagramStreamThread(Thread):
 			except:
 				pass
 			else:
+				if self.city_polygon and self.city_polygon.disjoint(Point(lng,lat)):
+					continue
 				q = '''INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{}", "{}", {}, {}, "{}", {}, 2, 0);'''.format(
 					item['id'], 
 					escape_string(text.encode('utf-8', 'replace')),
@@ -160,11 +171,13 @@ class InstagramStreamThread(Thread):
 
 class VKontakteStreamThread(Thread):
 
-	def __init__(self, mysql_con, redis_con):
+	def __init__(self, mysql_con, redis_con, filter_bounds = True):
 		Thread.__init__(self)
 		self.mysql = mysql_con
 		self.redis = redis_con
 		self.last_time = [int(time())-60]*len(VK_LOCATIONS)
+		if filter_bounds:
+			self.city_polygon = BOUNDS
 
 	def run(self):
 		while True:
@@ -213,6 +226,8 @@ class VKontakteStreamThread(Thread):
 			else:
 				text = ''
 			if lat and lng:
+				if self.city_polygon and self.city_polygon.disjoint(Point(lng,lat)):
+					continue
 				q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{}", "{}", {}, {}, "{}", {}, 3, {});'.format(
 					item['id'], 
 					escape_string(text.encode('utf-8', 'replace')),

@@ -23,6 +23,8 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - emulator.py - separate file for CollectorEmulator with commandline tools;
 
+- Bounds could be specified using .geojson file. And Collectors could filter points: do they exist inside bounds or not.
+
 #### Changed:
 
 - Event class: new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
@@ -59,7 +61,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - DATABASES: [redis](https://pypi.python.org/pypi/redis), [PySQLPool](https://pythonhosted.org/PySQLPool/tutorial.html), [MySQLdb](http://mysql-python.sourceforge.net/);
 
-- CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/);
+- CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/), [shapely](http://toblerity.org/shapely/);
 
 - NLTK: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
 

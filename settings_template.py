@@ -33,13 +33,15 @@ IG_ACCESS_TOKEN_2 = ''
 VK_ACCESS_TOKEN = ''
 
 # Locations
-# Main bounding box: 4 floats (longitude1, latitude1, longitude2, latitude2)
-BBOX = []
+# specify geojson file
+BOUNDS_FILE = 'msk.geojson'
 
-from utilities import get_circles_centers
-TW_LOCATIONS = ','.join([str(x) for x in BBOX])
-VK_LOCATIONS = get_circles_centers(BBOX, radius=4000)
-IG_LOCATIONS = get_circles_centers(BBOX, radius=5000)
+from utilities import get_locations
+BOUNDS, BBOX, TW_LOCATIONS, VK_LOCATIONS, IG_LOCATIONS = get_locations(bfile = BOUNDS_FILE)
+
+# or bbox: simplified version
+# BBOX = [lng min, lat min, lng max, lat max]
+# BOUNDS, BBOX, TW_LOCATIONS, VK_LOCATIONS, IG_LOCATIONS = get_locations(bbox = BBOX)
 
 # Sliding window size in seconds: default = 1 hour
 TIME_SLIDING_WINDOW = 3600
