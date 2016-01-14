@@ -247,31 +247,59 @@ class EventDetector():
 
 class Event():
 	"""
+	Event object - class for working with event candidates.
+	Collects all data on event candidate, stores it between clustering slices; merges slices, if required.
+	TBD: constructs and saves description, scores texts and media, scores and descripts event itself 
+	(probability, that candidate is real, event buzz, event category).
+
 	Attributes:
-		self.messages (Dict): raw tweets from database, enriched with weight, is_core params (on init), tokens (after add_stem_texts)
-		self.media (Dict): raw media objects from database
-		self.vocabulary (Set): tokens, that form the largest connected component in tokens graph
-		self.core (Set): tokens, that form the largest clique (maximal connected component) in tokens graph
-		self.entropy (float): entropy for authorship: 0 for mono-authored cluster; computed in event_summary_stats()
-		self.ppa (float): average number of posts per one author; computed in event_summary_stats()
+		self.created (datetime): creation timestamp
+		self.updated (datetime): last update timestamp
+		self.start (datetime): timestamp of the first message in the self.messages dict
+		self.end (datetime): timestamp of the last message in the self.messages dict
+		self.messages (Dict[dict]): raw tweets from database, enriched with weight, is_core params (on init), tokens (after add_stem_texts)
+		self.media (Dict[dict]): raw media objects from database
+		self.vocabulary (Set): tokens, that form the largest connected component in tokens graph; computed in build_tokens_graph() method
+		self.core (Set): tokens, that form the largest clique (maximal connected component) in tokens graph; computed in build_tokens_graph() method
+		self.entropy (float): entropy for authorship: 0 for mono-authored cluster; computed in event_summary_stats() method
+		self.ppa (float): average number of posts per one author; computed in event_summary_stats() method
+
+	Methods:
+		self.is_successor: examines, if current event have common messages with specified event slice
+		self.merge: merge current event with another event, update stat Attributes
+		self.add_slice: add messages and media to the event, recompute statistics
+		self.backup: dump event to MySQL long-term storage, used for non-evaluating events
+		self.get_messages_data: get MySQL data for messages ids
+		self.get_media_data: get MySQL data for media using existing messages ids
+		self.event_summary_stats: calculate entropy, ppa, start, and end statistics
+		self.add_stem_texts: add tokens lists to self.messages
+		self.build_tokens_graph: method constructs tokens co-occurrance undirected graph to determine graph vocabulary (largest connected component) and core (largest clique)
+		self.score_messages_by_text: method calculates token_score for messages elements. Jaccard distance is used (between message tokens and event vocabulary + core)
 
 	Message keys:
-		cluster (int): legacy from DBSCAN - number of cluster, event ancestor
+		cluster (int): legacy from DBSCAN - number of cluster (event ancestor)
 		id (str): DB message id; unique
 		is_core (bool): True, if tweet belongs to the core of ancestor cluster
 		iscopy (int): 1, if message is shared from another network
 		lat (float): latitude
 		lng (float): longitude
-		network (str): 'i' for Instagram, 't' for Twitter, 'v' for VKontakte
+		network (int): 1 for Instagram, 0 for Twitter, 2 for VKontakte
 		text (str): raw text of the message
 		tokens (Set[str]): collection of stemmed tokens from raw text; created in add_stem_texts()
 		tstamp (datetime): 'created at' timestamp
 		user (int): user id, absolutely unique for one network, but matches between networks are possible
-		tokens_score (float): agreement estimation with average cluster text [0:2]
-		weight (float): legacy from density outliers detector - how many standart deviations between current and reference distances to kNN
+		tokens_score (float): agreement estimation with average cluster text, based on Jaccard distance [0:2]
 	"""
 
 	def __init__(self, mysql_con, redis_con, points):
+		"""
+		Initialization.
+
+		Args:
+			mysql_con (PySQLPoolConnection): MySQL connection Object
+			redis_con (StrictRedis): RedisDB connection Object
+			points (list[dict]): raw messages from event detector
+		"""
 		self.id = uuid4()
 		self.created = datetime.now()
 		self.updated = datetime.now()
@@ -295,11 +323,24 @@ class Event():
 		self.get_media_data()
 
 	def is_successor(self, slice_ids, threshold = 0):
+		"""
+		Method examines, if current event have common messages with specified event slice.
+
+		Args:
+			slice_ids (Set): set if message id's to compare with
+			threshold (int): to recognize connection intersection between event messages and new slice should be more than threshold
+		"""
 		if len(set(self.messages.keys()).intersection(slice_ids)) > threshold:
 			return True
 		return False
 
 	def merge(self, other_event):
+		"""
+		Method merges current event with another event, update stat Attributes.
+
+		Args:
+			other_event (Event): another event object - to merge with
+		"""
 		self.messages.update(other_event.messages)
 		self.media.update(other_event.media)
 
@@ -310,6 +351,12 @@ class Event():
 		self.updated = datetime.now()
 
 	def add_slice(self, new_slice):
+		"""
+		Method adds messages and media to the event, recompute statistics.
+
+		Args:
+			new_slice (List[dict]): initial list with messages to be added
+		"""
 		self.messages.update({ x['id']:x for x in new_slice })
 		self.get_messages_data([x['id'] for x in new_slice])
 		self.get_media_data([x['id'] for x in new_slice])
@@ -321,6 +368,9 @@ class Event():
 		self.updated = datetime.now()
 
 	def backup(self):
+		"""
+		Method dumps event to MySQL long-term storage, used for non-evaluating events.
+		"""
 		q = '''INSERT INTO events(id, start, end, vocabulary, core) VALUES ("{}", "{}", "{}", "{}", "{}");'''.format(			self.id, self.start, self.end, escape_string(', '.join(self.vocabulary)), escape_string(', '.join(self.core)))
 		exec_mysql(q, self.mysql)
 		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['({},{})'.format(x, self.id) for x in self.messages.keys()]))
@@ -328,6 +378,12 @@ class Event():
 		self.redis.delete("event:{}".format(self.id))
 
 	def get_messages_data(self, ids=None):
+		"""
+		Method loads MySQL data for messages ids and adds it to the self.messagea argument.
+
+		Args:
+			ids (List[str]): list of messages ids to load. If not provided, all ids from self.messages are used 
+		"""
 		if not ids:
 			ids = [x['id'] for x in self.messages.values()]
 		q = '''SELECT * FROM tweets WHERE id in ({});'''.format(','.join(['"'+str(x)+'"' for x in ids]))
@@ -336,6 +392,12 @@ class Event():
 			self.messages[item['id']].update(item)
 
 	def get_media_data(self, ids=None):
+		"""
+		Method loads MySQL data for media using existing messages ids and adds it to the self.media argument.
+
+		Args:
+			ids (List[str]): list of messages ids to load. If not provided, all ids from self.messages are used 
+		"""
 		if not ids:
 			ids = [x['id'] for x in self.messages.values()]
 		q = '''SELECT * FROM media WHERE tweet_id in ({});'''.format(','.join(['"'+str(x)+'"' for x in ids]))
@@ -344,6 +406,9 @@ class Event():
 			self.media[item['id']] = item
 
 	def event_summary_stats(self):
+		"""
+		Method calculates self.entropy and self.ppa statistics, updates self.start and self.end timestamps.
+		"""
 		authorsip_stats = [len(tuple(i[1])) for i in groupby(sorted(self.messages.values(), key=lambda x:x['user']), lambda z: z['user'])]
 		self.entropy = entropy(authorsip_stats)
 		self.ppa = mean(authorsip_stats)
@@ -351,12 +416,22 @@ class Event():
 		self.end = max([x['tstamp'] for x in self.messages.values()])
 
 	def add_stem_texts(self):
+		"""
+		Method adds tokens lists to self.messages.
+		"""
 		for i in self.messages.keys():
 			txt = self.messages[i]['text']
 			txt = sub(self.url_re, '', txt)
 			self.messages[i]['tokens'] = set([self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))])
 
 	def build_tokens_graph(self, threshold=0):
+		"""
+		Method constructs tokens co-occurrance undirected graph to determine graph vocabulary (largest connected component) and core (largest clique).
+		TBD: add graph to event arguments (?)
+
+		Args:
+			threshold (int): minimal number of edge weight (co-occurrences count) to rely on the edge.
+		"""
 		G = Graph()
 		edges = {}
 		for item in self.messages.values():
@@ -380,6 +455,9 @@ class Event():
 			self.core = set([])
 
 	def score_messages_by_text(self):
+		"""
+		Method calculates token_score parameter for self.messages. Two Jaccard distances are used (between message tokens and event vocabulary + core).
+		"""
 		for msg_id in self.messages:
 			try:
 				vocab_score = float(len(self.vocabulary.intersection(self.messages[msg_id]['tokens'])))/\
