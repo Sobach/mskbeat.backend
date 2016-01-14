@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
-from pickle import dumps as pdumps, loads as ploads
+from pickle import loads as ploads
 from time import sleep
 from json import dumps as jdumps
 from uuid import uuid4
@@ -21,6 +21,7 @@ from networkx import Graph, connected_components, find_cliques
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
 from scipy.stats import entropy
+from shapely.geometry import MultiPoint
 
 # SYSTEM MATH
 from math import radians, cos, sin, asin, sqrt
@@ -32,6 +33,9 @@ from nltk.tokenize import TreebankWordTokenizer
 # CONSTANTS
 from settings import *
 from utilities import get_mysql_con, exec_mysql
+
+# OTHER
+from dill import dumps as ddumps, loads as dloads
 
 class EventDetector():
 	"""
@@ -56,11 +60,16 @@ class EventDetector():
 		self.redis = redis_con
 		self.calcualte_eps_dbscan()
 		self.interrupter = False
+		self.ffr = fast_forward_ratio
 
 	def run(self):
+		"""
+		Main object loop. Looks for actual messages, DBSCANs them, and merges with previously computed events.
+		Interrupts if self.interrupter is set to True.
+		"""
 		while True:
 			self.build_reference_trees(datetime.now(), take_origins = True)
-			self.build_current_tree()
+			self.build_current_trees()
 			points = self.get_current_outliers()
 			slice_clusters = self.dbscan_tweets(points)
 			self.get_previous_events()
@@ -88,28 +97,40 @@ class EventDetector():
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
 
-	def build_reference_trees(self, time, days = 14, take_origins = False):
+	def build_reference_trees(self, time, days = 14, take_origins = False, min_points = 10):
 		"""
 		Create kNN-trees (KDTrees) for previous period - 1 day = 1 tree. 
 		These trees are used as reference, when comparing with current kNN-distance.
+		Trees are created for each network separately.
 		Args:
 			time (datetime): timestamp for data of interest. 75% of data is taken from the past, and 25% - from the future.
 			days (int): how many days should be used for reference (by default 2 weeks)
 			take_origins (bool): whether to use actual dynamic data (default), or training dataset
+			min_points (int): minimum number of points for every tree. if there is not enough data, points (0,0) are used
 
 		Result:
 			self.trees (List[KDTree])
 		"""
 		data = self.get_reference_data(time, days, take_origins)
-		preproc = {}
+		networks = [1,2,3]
+		preproc = {net:{} for net in networks}
 		for item in data:
 			try: 
-				preproc[item['DATE(tstamp)']].append([item['lng'], item['lat']])
+				preproc[item['network']][item['DATE(tstamp)']].append([item['lng'], item['lat']])
 			except KeyError: 
-				preproc[item['DATE(tstamp)']] = [[item['lng'], item['lat']]]
-		self.reference_trees = []
-		for element in preproc.values():
-			self.reference_trees.append(KDTree(array(element)))
+				preproc[item['network']][item['DATE(tstamp)']] = [[item['lng'], item['lat']]]
+		self.reference_trees = {net:[] for net in networks}
+		for net in networks:
+			if not preproc[net]:
+				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
+				continue
+			#try:
+			for element in preproc[net].values():
+				if len(element) < min_points:
+					element += [(0,0)]*(min_points - len(element))
+				self.reference_trees[net].append(KDTree(array(element)))
+			#except KeyError:
+			#	self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
 
 	def get_reference_data(self, time, days = 14, take_origins = False):
 		"""
@@ -142,13 +163,13 @@ class EventDetector():
 			data += exec_mysql(q, self.mysql)[0]
 		return data
 
-	def build_current_tree(self):
+	def build_current_trees(self):
 		"""
 		Building current KDTree from data, stored in Redis database.
 		Every tweet there has expiration time: TIME_SLIDING_WINDOW/fast_forward_ratio
 		So at every time only currently active tweets are selected.
 		"""
-		data = []
+		data = {}
 		for key in self.redis.keys("message:*"):
 			try:
 				message = ploads(self.redis.get(key))
@@ -157,33 +178,42 @@ class EventDetector():
 			else:
 				if message['id'] == 0 and message['text'] == 'TheEnd':
 					self.interrupter = True
-				data.append(message)
+				try:
+					data[message['network']].append(message)
+				except KeyError:
+					data[message['network']] = [message]
 		self.current_datapoints = data
 		if len(data):
-			self.tree = KDTree(array([[x['lng'], x['lat']] for x in data]))
+			self.current_trees = {}
+			for net in data.keys():
+				self.current_trees[net] = KDTree(array([[x['lng'], x['lat']] for x in data[net]]))
 
-	def get_current_outliers(self):
+	def get_current_outliers(self, neighbour_points = 5):
 		"""
 		Computational part:
 		- calculate mean and standart deviation for kNN distance for current points using referenced KDTrees
 		- compare referenced values with current tree, find outliers (3 standart deviations from mean)
 		Result: returns points without noise (outliers only)
+
+		Args:
+			neighbour_points (int)
 		"""
+		points = []
 		if len(self.current_datapoints):
-			cur_knn_data = mean(self.tree.query(array([[x['lng'], x['lat']] for x in self.current_datapoints]), k=5, return_distance=True)[0], axis=1)
-			#print self.reference_trees
-			#print array([x.query(array([[x['lng'], x['lat']] for x in self.current_datapoints]), k=5, return_distance=True)[0] for x in self.reference_trees])
-			ref_knn_data = mean(array([x.query(array([[x['lng'], x['lat']] for x in self.current_datapoints]), k=5, return_distance=True)[0] for x in self.reference_trees]), axis=2)
-			thr_knn_mean = mean(ref_knn_data, axis=0)
-			thr_knn_std = std(ref_knn_data, axis=0)
-			thr_knn_data =  thr_knn_mean - thr_knn_std  * 3
-			points = list(array(self.current_datapoints)[cur_knn_data < thr_knn_data])
-			weights = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
-			for i in range(len(weights)):
-				points[i]['weight'] = weights[i]
-			return points
-		else:
-			return []
+			for net in self.current_datapoints.keys():
+				if len(self.current_datapoints[net]) < neighbour_points:
+					continue
+				cur_knn_data = mean(self.current_trees[net].query(array([[x['lng'], x['lat']] for x in self.current_datapoints[net]]), k=5, return_distance=True)[0], axis=1)
+				ref_knn_data = mean(array([x.query(array([[x['lng'], x['lat']] for x in self.current_datapoints[net]]), k=5, return_distance=True)[0] for x in self.reference_trees[net]]), axis=2)
+				thr_knn_mean = mean(ref_knn_data, axis=0)
+				thr_knn_std = std(ref_knn_data, axis=0)
+				thr_knn_data =  thr_knn_mean - thr_knn_std  * 3
+				new_points = list(array(self.current_datapoints[net])[cur_knn_data < thr_knn_data])
+				weights = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
+				for i in range(len(weights)):
+					new_points[i]['weight'] = weights[i]
+				points += new_points
+		return points
 
 	def dbscan_tweets(self, points):
 		"""
@@ -206,23 +236,23 @@ class EventDetector():
 		"""
 		self.current_events = {}
 		for key in self.redis.keys("event:*"):
-			event = ploads(self.redis.get(key))
+			event = dloads(self.redis.get(key))
 			self.current_events[event.id] = event
 
-	def merge_slices_to_events(current_slices):
+	def merge_slices_to_events(self, current_slices):
 		"""
 		Looking for comparation between slices and events.
 		Updating events, if needed; creating new events.
 		"""
 		prev_events = self.current_events.values()
-		for event_slice in current_slices:
+		for event_slice in current_slices.values():
 			slice_ids = set([x['id'] for x in event_slice])
 			ancestors = []
 			for event in prev_events:
 				if event.is_successor(slice_ids):
 					ancestors.append(event.id)
 			if len(ancestors) == 0:
-				new_event = Event(self.mysql, event_slice)
+				new_event = Event(self.mysql, self.redis, event_slice)
 				self.current_events[new_event.id] = new_event
 			elif len(ancestors) == 1:
 				self.current_events[ancestors[0]].add_slice(event_slice)
@@ -240,10 +270,11 @@ class EventDetector():
 
 		"""
 		for event in self.current_events.values():
-			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/fast_forward_ratio:
+			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
 				event.backup()
 			else:
-				self.redis.set("event:{}".format(event.id), pdumps(event))
+				dump = ddumps(event)
+				self.redis.set("event:{}".format(event.id), dump)
 
 class Event():
 	"""
@@ -263,9 +294,13 @@ class Event():
 		self.core (Set): tokens, that form the largest clique (maximal connected component) in tokens graph; computed in build_tokens_graph() method
 		self.entropy (float): entropy for authorship: 0 for mono-authored cluster; computed in event_summary_stats() method
 		self.ppa (float): average number of posts per one author; computed in event_summary_stats() method
+		self.event_hull (shapely.geometry.polygon.Polygon): convex hull for all messages of the event; computed in add_geo_shapes() method
+		self.core_hull (shapely.geometry.polygon.Polygon): convex hull for core messages of the event (recognized as core by DBSCAN); computed in add_geo_shapes() method
 
 	Methods:
 		self.is_successor: examines, if current event have common messages with specified event slice
+		self.is_mono_network: examines, if current event is mononetwork, i.e. all the messages are from one network
+		self.convex_hull_intersection: calculates Jaccard distance for convex hulls and core convex hulls of two events
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
 		self.backup: dump event to MySQL long-term storage, used for non-evaluating events
@@ -273,6 +308,7 @@ class Event():
 		self.get_media_data: get MySQL data for media using existing messages ids
 		self.event_summary_stats: calculate entropy, ppa, start, and end statistics
 		self.add_stem_texts: add tokens lists to self.messages
+		self.add_geo_shapes: add convex hull representations of the event
 		self.build_tokens_graph: method constructs tokens co-occurrance undirected graph to determine graph vocabulary (largest connected component) and core (largest clique)
 		self.score_messages_by_text: method calculates token_score for messages elements. Jaccard distance is used (between message tokens and event vocabulary + core)
 
@@ -313,14 +349,18 @@ class Event():
 		
 		self.messages = { x['id']:x for x in points }
 		self.get_messages_data()
-		self.add_stem_texts()
 
+		self.add_stem_texts()
 		self.build_tokens_graph()
 		self.score_messages_by_text()
+
 		self.event_summary_stats()
+
+		#self.add_geo_shapes()
 
 		self.media = {}
 		self.get_media_data()
+
 
 	def is_successor(self, slice_ids, threshold = 0):
 		"""
@@ -333,6 +373,27 @@ class Event():
 		if len(set(self.messages.keys()).intersection(slice_ids)) > threshold:
 			return True
 		return False
+
+	def is_mono_network(self):
+		"""
+		Method examines, if current event is mono networked, i.e. all the messages are from one network (Instagram, Twitter, or Facebook)
+		"""
+		if len(set([x['network'] for x in self.messages.values()])) <= 1:
+			return True
+		return False
+
+	def convex_hull_intersection(self, other_event):
+		"""
+		Method calculates Jaccard distance for convex hulls and core convex hulls of two events.
+
+		Args:
+			other_event (Event): another event object - to intersect with
+		"""
+		if self.event_hull.disjoint(other_event.event_hull):
+			return 0, 0
+		hull_intersection = self.event_hull.intersection(other_event.event_hull).area / self.event_hull.union(other_event.event_hull).area
+		core_intersection = self.core_hull.intersection(other_event.core_hull).area / self.core_hull.union(other_event.core_hull).area
+		return hull_intersection, core_intersection
 
 	def merge(self, other_event):
 		"""
@@ -347,6 +408,7 @@ class Event():
 		self.build_tokens_graph()
 		self.score_messages_by_text()
 		self.event_summary_stats()
+		#self.add_geo_shapes()
 
 		self.updated = datetime.now()
 
@@ -360,10 +422,12 @@ class Event():
 		self.messages.update({ x['id']:x for x in new_slice })
 		self.get_messages_data([x['id'] for x in new_slice])
 		self.get_media_data([x['id'] for x in new_slice])
+		self.add_stem_texts()
 
 		self.build_tokens_graph()
 		self.score_messages_by_text()
 		self.event_summary_stats()
+		#self.add_geo_shapes()
 
 		self.updated = datetime.now()
 
@@ -420,9 +484,17 @@ class Event():
 		Method adds tokens lists to self.messages.
 		"""
 		for i in self.messages.keys():
-			txt = self.messages[i]['text']
-			txt = sub(self.url_re, '', txt)
-			self.messages[i]['tokens'] = set([self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))])
+			if 'tokens' not in self.messages[i].keys():
+				txt = self.messages[i]['text']
+				txt = sub(self.url_re, '', txt)
+				self.messages[i]['tokens'] = set([self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))])
+
+	#def add_geo_shapes(self):
+		#"""
+		#Method adds convex hull representations of the event (self.event_hull and self.core_hull).
+		#"""
+		#self.event_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values()]).convex_hull
+		#self.core_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values() if x['is_core']]).convex_hull
 
 	def build_tokens_graph(self, threshold=0):
 		"""
