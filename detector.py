@@ -68,18 +68,22 @@ class EventDetector():
 		Interrupts if self.interrupter is set to True.
 		"""
 		while True:
-			self.build_reference_trees(datetime.now(), take_origins = True)
+			start_time = datetime.now()
 			self.build_current_trees()
-			points = self.get_current_outliers()
-			slice_clusters = self.dbscan_tweets(points)
-			self.get_previous_events()
-			self.merge_slices_to_events(slice_clusters)
-			self.dump_current_events()
-			if self.interrupter:
-				for event in self.events.values():
-					event.backup()
-				break
-			sleep(3)
+			if self.current_datapoints:
+				self.build_reference_trees(take_origins = True)
+				points = self.get_current_outliers()
+				slice_clusters = self.dbscan_tweets(points)
+				self.get_previous_events()
+				self.merge_slices_to_events(slice_clusters)
+				self.dump_current_events()
+				secs = (datetime.now() - start_time).total_seconds()
+				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
+				if self.interrupter:
+					for event in self.events.values():
+						event.backup()
+					break
+				#sleep(3)
 
 	def calcualte_eps_dbscan(self, max_dist = 0.2):
 		"""
@@ -97,13 +101,12 @@ class EventDetector():
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
 
-	def build_reference_trees(self, time, days = 14, take_origins = False, min_points = 10):
+	def build_reference_trees(self, days = 14, take_origins = False, min_points = 10):
 		"""
 		Create kNN-trees (KDTrees) for previous period - 1 day = 1 tree. 
 		These trees are used as reference, when comparing with current kNN-distance.
 		Trees are created for each network separately.
 		Args:
-			time (datetime): timestamp for data of interest. 75% of data is taken from the past, and 25% - from the future.
 			days (int): how many days should be used for reference (by default 2 weeks)
 			take_origins (bool): whether to use actual dynamic data (default), or training dataset
 			min_points (int): minimum number of points for every tree. if there is not enough data, points (0,0) are used
@@ -111,6 +114,7 @@ class EventDetector():
 		Result:
 			self.trees (List[KDTree])
 		"""
+		time = max([item['tstamp'] for sublist in self.current_datapoints.values() for item in sublist])
 		data = self.get_reference_data(time, days, take_origins)
 		networks = [1,2,3]
 		preproc = {net:{} for net in networks}
@@ -124,13 +128,10 @@ class EventDetector():
 			if not preproc[net]:
 				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
 				continue
-			#try:
 			for element in preproc[net].values():
 				if len(element) < min_points:
 					element += [(0,0)]*(min_points - len(element))
 				self.reference_trees[net].append(KDTree(array(element)))
-			#except KeyError:
-			#	self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
 
 	def get_reference_data(self, time, days = 14, take_origins = False):
 		"""
@@ -139,12 +140,12 @@ class EventDetector():
 		otherwise - use dynamic data from tweets table.
 		Returns MySQL dict
 		Args:
-			time (datetime): timestamp for data of interest. 75% of data is taken from the past, and 25% - from the future.
+			time (datetime): timestamp for data of interest. 90% of data is taken from the past, and 10% - from the future.
 			days (int): how many days should be used for reference (by default 2 weeks)
 			take_origins (bool): whether to use actual dynamic data (default), or training dataset
 		"""
-		lower_bound = time - timedelta(seconds = TIME_SLIDING_WINDOW * 0.75)
-		upper_bound = time + timedelta(seconds = TIME_SLIDING_WINDOW * 0.25)
+		lower_bound = time - timedelta(seconds = TIME_SLIDING_WINDOW * 0.9)
+		upper_bound = time + timedelta(seconds = TIME_SLIDING_WINDOW * 0.1)
 		if take_origins:
 			database = 'tweets_origins'
 			d = exec_mysql('SELECT tstamp FROM tweets_origins ORDER BY tstamp DESC LIMIT 1;', self.mysql)
@@ -347,7 +348,7 @@ class Event():
 		self.url_re = compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
 
 		if points:
-			self.id = uuid4()
+			self.id = str(uuid4())
 			self.created = datetime.now()
 			self.updated = datetime.now()
 

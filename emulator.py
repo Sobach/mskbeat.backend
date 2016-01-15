@@ -47,7 +47,7 @@ class CollectorEmulator():
 		self.new_init = datetime.now() + timedelta(seconds = start_timeout)
 		for i in range(len(self.raw_data)):
 			seconds2add = (self.raw_data[i]['tstamp'] - self.old_init).total_seconds()/fast_forward_ratio
-			self.raw_data[i]['tstamp'] = self.new_init + timedelta(seconds = seconds2add)
+			self.raw_data[i]['pub_tstamp'] = self.new_init + timedelta(seconds = seconds2add)
 	
 		# These vars are required for logging and writing status updates
 		self.new_end = self.raw_data[-1]['tstamp']
@@ -80,6 +80,10 @@ class CollectorEmulator():
 			self.redis.delete(*self.redis.keys('event:*'))
 		except ResponseError:
 			pass
+		try:
+			self.redis.delete(*self.redis.keys('dumped:*'))
+		except ResponseError:
+			pass
 
 	def run(self):
 		"""
@@ -88,10 +92,12 @@ class CollectorEmulator():
 		"""
 		while True:
 			try:
-				if self.raw_data[0]['tstamp'] <= datetime.now():
-					self.push_msg(self.raw_data.pop(0))
+				if self.raw_data[0]['pub_tstamp'] <= datetime.now():
+					msg = self.raw_data.pop(0)
+					self.push_msg(msg)
 			except IndexError:
-				self.push_msg({'id':0, 'text':'TheEnd', 'lat':0, 'lng':0, 'tstamp':datetime.now(), 'user':0, 'network':'u', 'iscopy':0})
+				message = {'id':0, 'text':'TheEnd', 'lat':0, 'lng':0, 'tstamp':datetime.now(), 'user':0, 'network':'u', 'iscopy':0}
+				self.redis.set("message:0", pdumps(message))
 				break
 
 	def push_msg(self, message):
@@ -113,7 +119,7 @@ class CollectorEmulator():
 		Logging the whole process: using stdout, all logging is being made in one line. 
 		Percentage is computed from start time to end time, also current msg # is shown.
 		"""
-		percent = '{}%'.format(round(100*float((message['tstamp'] - self.new_init).total_seconds())/self.duration, 2))
+		percent = '{}%'.format(round(100*float((message['pub_tstamp'] - self.new_init).total_seconds())/self.duration, 2))
 		stdout.write('\r'.rjust(len(self.previous_out), ' '))
 		self.previous_out = '\rEmulating: ('+self.rotator[self.i%4]+') Complete: ' + percent.ljust(7, ' ') + 'Messages: {}/{}'.format(self.i, self.total_msgs)
 		stdout.flush()
