@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
-from pickle import loads as ploads
+from pickle import loads as ploads, dumps as pdumps
 from time import sleep
 from json import dumps as jdumps
 from uuid import uuid4
@@ -16,7 +16,7 @@ from redis import StrictRedis
 from MySQLdb import escape_string
 
 # MATH
-from numpy import array, mean, std, absolute
+from numpy import array, mean, std, absolute, seterr
 from networkx import Graph, connected_components, find_cliques
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
@@ -33,6 +33,8 @@ from nltk.tokenize import TreebankWordTokenizer
 # CONSTANTS
 from settings import *
 from utilities import get_mysql_con, exec_mysql
+
+seterr(divide='ignore', invalid='ignore')
 
 class EventDetector():
 	"""
@@ -74,7 +76,7 @@ class EventDetector():
 			self.merge_slices_to_events(slice_clusters)
 			self.dump_current_events()
 			if self.interrupter:
-				for event in self.events:
+				for event in self.events.values():
 					event.backup()
 				break
 			sleep(3)
@@ -181,7 +183,7 @@ class EventDetector():
 				except KeyError:
 					data[message['network']] = [message]
 		self.current_datapoints = data
-		if len(data):
+		if data:
 			self.current_trees = {}
 			for net in data.keys():
 				self.current_trees[net] = KDTree(array([[x['lng'], x['lat']] for x in data[net]]))
@@ -197,7 +199,7 @@ class EventDetector():
 			neighbour_points (int)
 		"""
 		points = []
-		if len(self.current_datapoints):
+		if self.current_datapoints:
 			for net in self.current_datapoints.keys():
 				if len(self.current_datapoints[net]) < neighbour_points:
 					continue
@@ -218,7 +220,7 @@ class EventDetector():
 		Method clusters points-outliers into slice-clusters using DBSCAN.
 		Returns dict of slice-clusters - base for event-candidates.
 		"""
-		if len(points):
+		if points:
 			clustering = DBSCAN(eps=self.eps, min_samples=5)
 			labels = clustering.fit_predict(array([[x['lng'], x['lat']] for x in points]))
 			ret_tab = [dict(points[i].items() + {'cluster':labels[i], 'is_core': i in clustering.core_sample_indices_}.items()) for i in range(len(labels)) if labels[i] > -1]
@@ -234,7 +236,8 @@ class EventDetector():
 		"""
 		self.events = {}
 		for key in self.redis.keys("event:*"):
-			event = Event(self.mysql, self.redis).loads(key[6:])
+			event = Event(self.mysql, self.redis)
+			event.loads(key[6:])
 			self.events[event.id] = event
 
 	def merge_slices_to_events(self, current_slices):
@@ -244,7 +247,7 @@ class EventDetector():
 		"""
 		prev_events = self.events.values()
 		for event_slice in current_slices.values():
-			slice_ids = set([x['id'] for x in event_slice])
+			slice_ids = {x['id'] for x in event_slice}
 			ancestors = []
 			for event in prev_events:
 				if event.is_successor(slice_ids):
@@ -258,6 +261,7 @@ class EventDetector():
 				for ancestor in ancestors[1:]:
 					self.events[ancestors[0]].merge(self.events[ancestor])
 					del self.events[ancestor]
+					self.redis.delete("event:{}".format(ancestor))
 				self.events[ancestors[0]].add_slice(event_slice)
 
 	def dump_current_events(self):
@@ -335,24 +339,35 @@ class Event():
 			redis_con (StrictRedis): RedisDB connection Object
 			points (list[dict]): raw messages from event detector
 		"""
-		self.id = uuid4()
-		self.created = datetime.now()
-		self.updated = datetime.now()
-
 		self.mysql = mysql_con
 		self.redis = redis_con
 		self.morph = MorphAnalyzer()
 		self.tokenizer = TreebankWordTokenizer()
 		self.word = compile(r'^\w+$', flags = UNICODE | IGNORECASE)
 		self.url_re = compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-		
-		self.messages = { x['id']:x for x in points }
-		self.get_messages_data()
 
-		self.media = {}
-		self.get_media_data()
+		if points:
+			self.id = uuid4()
+			self.created = datetime.now()
+			self.updated = datetime.now()
 
-		self.event_update()
+			self.messages = { x['id']:x for x in points }
+			self.get_messages_data()
+			self.media = {}
+			self.get_media_data()
+			self.event_update()
+
+	def __str__(self):
+		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
+		return txt
+
+	def __unicode__(self):
+		txt = u'<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
+		return txt
+
+	def __repr__(self):
+		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
+		return txt
 
 	def event_update(self):
 		"""
@@ -380,7 +395,7 @@ class Event():
 		"""
 		Method examines, if current event is mono networked, i.e. all the messages are from one network (Instagram, Twitter, or Facebook)
 		"""
-		if len(set([x['network'] for x in self.messages.values()])) <= 1:
+		if len({x['network'] for x in self.messages.values()}) <= 1:
 			return True
 		return False
 
@@ -426,11 +441,16 @@ class Event():
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
 		"""
-		q = '''INSERT INTO events(id, start, end, vocabulary, core) VALUES ("{}", "{}", "{}", "{}", "{}");'''.format(self.id, self.start, self.end, escape_string(', '.join(self.vocabulary)), escape_string(', '.join(self.core)))
+		q = u'''INSERT INTO events(id, start, end) VALUES ("{}", "{}", "{}");'''.format(self.id, self.start, self.end)
 		exec_mysql(q, self.mysql)
-		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['({},{})'.format(x, self.id) for x in self.messages.keys()]))
+		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['("{}","{}")'.format(x, self.id) for x in self.messages.keys()]))
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
+
+		# Dump to Redis event to restore it in case
+		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media}
+		data = pdumps(todump)
+		self.redis.set("dumped:{}".format(self.id), data)
 
 	def loads(self, event_id):
 		"""
@@ -498,7 +518,7 @@ class Event():
 			if 'tokens' not in self.messages[i].keys():
 				txt = self.messages[i]['text']
 				txt = sub(self.url_re, '', txt)
-				self.messages[i]['tokens'] = set([self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))])
+				self.messages[i]['tokens'] = {self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))}
 
 	def add_geo_shapes(self):
 		"""
@@ -518,7 +538,7 @@ class Event():
 		G = Graph()
 		edges = {}
 		for item in self.messages.values():
-			tokens = set([x for x in item['tokens'] if len(x) > 2])
+			tokens = {x for x in item['tokens'] if len(x) > 2}
 			if len(tokens) < 2:
 				continue
 			for pair in combinations(tokens, 2):
@@ -531,11 +551,11 @@ class Event():
 		try:
 			self.vocabulary = set(sorted(connected_components(G), key = len, reverse=True)[0])
 		except IndexError:
-			self.vocabulary = set([])
+			self.vocabulary = set()
 		try:
 			self.core = set(sorted(find_cliques(G), key = len, reverse=True)[0])
 		except IndexError:
-			self.core = set([])
+			self.core = set()
 
 	def score_messages_by_text(self):
 		"""
