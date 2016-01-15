@@ -34,9 +34,6 @@ from nltk.tokenize import TreebankWordTokenizer
 from settings import *
 from utilities import get_mysql_con, exec_mysql
 
-# OTHER
-from dill import dumps as ddumps, loads as dloads
-
 class EventDetector():
 	"""
 	Event detector Object: used to discover events both online and offline.
@@ -61,6 +58,7 @@ class EventDetector():
 		self.calcualte_eps_dbscan()
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
+		self.events = {}
 
 	def run(self):
 		"""
@@ -76,7 +74,7 @@ class EventDetector():
 			self.merge_slices_to_events(slice_clusters)
 			self.dump_current_events()
 			if self.interrupter:
-				for event in self.current_events:
+				for event in self.events:
 					event.backup()
 				break
 			sleep(3)
@@ -234,17 +232,17 @@ class EventDetector():
 		Loading previously saved events from Redis database - 
 		to have data to merge with currently created slice-clusters
 		"""
-		self.current_events = {}
+		self.events = {}
 		for key in self.redis.keys("event:*"):
-			event = dloads(self.redis.get(key))
-			self.current_events[event.id] = event
+			event = Event(self.mysql, self.redis).loads(key[6:])
+			self.events[event.id] = event
 
 	def merge_slices_to_events(self, current_slices):
 		"""
 		Looking for comparation between slices and events.
 		Updating events, if needed; creating new events.
 		"""
-		prev_events = self.current_events.values()
+		prev_events = self.events.values()
 		for event_slice in current_slices.values():
 			slice_ids = set([x['id'] for x in event_slice])
 			ancestors = []
@@ -253,14 +251,14 @@ class EventDetector():
 					ancestors.append(event.id)
 			if len(ancestors) == 0:
 				new_event = Event(self.mysql, self.redis, event_slice)
-				self.current_events[new_event.id] = new_event
+				self.events[new_event.id] = new_event
 			elif len(ancestors) == 1:
-				self.current_events[ancestors[0]].add_slice(event_slice)
+				self.events[ancestors[0]].add_slice(event_slice)
 			else:
 				for ancestor in ancestors[1:]:
-					self.current_events[ancestors[0]].merge(self.current_events[ancestor])
-					del self.current_events[ancestor]
-				self.current_events[ancestors[0]].add_slice(event_slice)
+					self.events[ancestors[0]].merge(self.events[ancestor])
+					del self.events[ancestor]
+				self.events[ancestors[0]].add_slice(event_slice)
 
 	def dump_current_events(self):
 		"""
@@ -269,12 +267,11 @@ class EventDetector():
 		for TIME_SLIDING_WINDOW/fast_forward_ratio time.
 
 		"""
-		for event in self.current_events.values():
+		for event in self.events.values():
 			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
 				event.backup()
 			else:
-				dump = ddumps(event)
-				self.redis.set("event:{}".format(event.id), dump)
+				event.dumps()
 
 class Event():
 	"""
@@ -298,12 +295,14 @@ class Event():
 		self.core_hull (shapely.geometry.polygon.Polygon): convex hull for core messages of the event (recognized as core by DBSCAN); computed in add_geo_shapes() method
 
 	Methods:
+		self.event_update: commands to calculate all data on event, based on messages and media
 		self.is_successor: examines, if current event have common messages with specified event slice
 		self.is_mono_network: examines, if current event is mononetwork, i.e. all the messages are from one network
 		self.convex_hull_intersection: calculates Jaccard distance for convex hulls and core convex hulls of two events
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
 		self.backup: dump event to MySQL long-term storage, used for non-evaluating events
+		self.loads / self.dumps: serialize/deserialize event and put/get it to Redis
 		self.get_messages_data: get MySQL data for messages ids
 		self.get_media_data: get MySQL data for media using existing messages ids
 		self.event_summary_stats: calculate entropy, ppa, start, and end statistics
@@ -327,7 +326,7 @@ class Event():
 		tokens_score (float): agreement estimation with average cluster text, based on Jaccard distance [0:2]
 	"""
 
-	def __init__(self, mysql_con, redis_con, points):
+	def __init__(self, mysql_con, redis_con, points = []):
 		"""
 		Initialization.
 
@@ -350,17 +349,20 @@ class Event():
 		self.messages = { x['id']:x for x in points }
 		self.get_messages_data()
 
-		self.add_stem_texts()
-		self.build_tokens_graph()
-		self.score_messages_by_text()
-
-		self.event_summary_stats()
-
-		#self.add_geo_shapes()
-
 		self.media = {}
 		self.get_media_data()
 
+		self.event_update()
+
+	def event_update(self):
+		"""
+		Commands to calculate all data on event, based on messages and media.
+		"""
+		self.add_stem_texts()
+		self.build_tokens_graph()
+		self.score_messages_by_text()
+		self.event_summary_stats()
+		self.add_geo_shapes()
 
 	def is_successor(self, slice_ids, threshold = 0):
 		"""
@@ -404,12 +406,7 @@ class Event():
 		"""
 		self.messages.update(other_event.messages)
 		self.media.update(other_event.media)
-
-		self.build_tokens_graph()
-		self.score_messages_by_text()
-		self.event_summary_stats()
-		#self.add_geo_shapes()
-
+		self.event_update()
 		self.updated = datetime.now()
 
 	def add_slice(self, new_slice):
@@ -422,24 +419,38 @@ class Event():
 		self.messages.update({ x['id']:x for x in new_slice })
 		self.get_messages_data([x['id'] for x in new_slice])
 		self.get_media_data([x['id'] for x in new_slice])
-		self.add_stem_texts()
-
-		self.build_tokens_graph()
-		self.score_messages_by_text()
-		self.event_summary_stats()
-		#self.add_geo_shapes()
-
+		self.event_update()
 		self.updated = datetime.now()
 
 	def backup(self):
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
 		"""
-		q = '''INSERT INTO events(id, start, end, vocabulary, core) VALUES ("{}", "{}", "{}", "{}", "{}");'''.format(			self.id, self.start, self.end, escape_string(', '.join(self.vocabulary)), escape_string(', '.join(self.core)))
+		q = '''INSERT INTO events(id, start, end, vocabulary, core) VALUES ("{}", "{}", "{}", "{}", "{}");'''.format(self.id, self.start, self.end, escape_string(', '.join(self.vocabulary)), escape_string(', '.join(self.core)))
 		exec_mysql(q, self.mysql)
 		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['({},{})'.format(x, self.id) for x in self.messages.keys()]))
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
+
+	def loads(self, event_id):
+		"""
+		Method for deserializing and loading event from Redis database.
+		"""
+		event_data = ploads(self.redis.get('event:{}'.format(event_id)))
+		self.id = event_data['id']
+		self.created = event_data['created']
+		self.updated = event_data['updated']
+		self.messages = event_data['messages']
+		self.media = event_data['media']
+		self.event_update()
+
+	def dumps(self):
+		"""
+		Method for serializing and dumping event to Redis database.
+		"""
+		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media}
+		data = pdumps(todump)
+		self.redis.set("event:{}".format(self.id), data)
 
 	def get_messages_data(self, ids=None):
 		"""
@@ -489,12 +500,12 @@ class Event():
 				txt = sub(self.url_re, '', txt)
 				self.messages[i]['tokens'] = set([self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))])
 
-	#def add_geo_shapes(self):
-		#"""
-		#Method adds convex hull representations of the event (self.event_hull and self.core_hull).
-		#"""
-		#self.event_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values()]).convex_hull
-		#self.core_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values() if x['is_core']]).convex_hull
+	def add_geo_shapes(self):
+		"""
+		Method adds convex hull representations of the event (self.event_hull and self.core_hull).
+		"""
+		self.event_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values()]).convex_hull
+		self.core_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values() if x['is_core']]).convex_hull
 
 	def build_tokens_graph(self, threshold=0):
 		"""
