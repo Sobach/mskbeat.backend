@@ -24,7 +24,7 @@ from TwitterAPI import TwitterAPI, TwitterRequestError, TwitterConnectionError
 # MATH
 from shapely.geometry import Point
 
-# CONSTANTS
+# SELF IMPORT
 from settings import *
 from utilities import get_mysql_con, exec_mysql
 

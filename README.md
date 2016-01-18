@@ -27,7 +27,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 #### Changed:
 
-- Event class: new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
+- Event class: separate file (event.py); new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
 
 - Collector class: rewritten to accomplish new requirements, UI removed; 
 
@@ -69,7 +69,9 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - collector.py: contains classes for online data parsing in Instagram, Twitter, and VKontakte. Also has console UI. TBD: remove console UI; rewrite output queues (like in CollectorEmulator); fix bugs;
 
-- detector.py: currently main working file; Event and EventDetector classes;
+- detector.py: EventDetector class - infinity loop, looking for messages outliers, using current topology, and merging messages into slices, and slices - into events. TBD: events validator algorithm;
+
+- event.py: Event object - event candidate, produced by EventDetector. Stores all event-related data;
 
 - settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings;
 

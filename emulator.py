@@ -11,7 +11,7 @@ from sys import stdout
 from MySQLdb import escape_string
 from redis.exceptions import ResponseError
 
-# CONSTANTS
+# SELF IMPORT
 from settings import *
 from utilities import get_mysql_con, exec_mysql
 
