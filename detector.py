@@ -5,11 +5,12 @@
 # SYSTEM
 from datetime import datetime, timedelta
 from re import compile, sub, match, UNICODE, IGNORECASE
-from itertools import groupby, combinations
+from itertools import groupby, combinations, chain
 from pickle import loads as ploads, dumps as pdumps
 from time import sleep
 from json import dumps as jdumps
 from uuid import uuid4
+from copy import deepcopy
 
 # DATABASE
 from redis import StrictRedis
@@ -245,25 +246,37 @@ class EventDetector():
 		"""
 		Looking for comparation between slices and events.
 		Updating events, if needed; creating new events.
+		Deleting garbage events (that has been merged).
 		"""
-		prev_events = self.events.values()
-		for event_slice in current_slices.values():
+		slices_ids = set(current_slices.keys())
+		events_ids = set(self.events.keys())
+		edges = []
+		for slice_id, event_slice in current_slices.items():
 			slice_ids = {x['id'] for x in event_slice}
-			ancestors = []
-			for event in prev_events:
+			for event in self.events.values():
 				if event.is_successor(slice_ids):
-					ancestors.append(event.id)
-			if len(ancestors) == 0:
-				new_event = Event(self.mysql, self.redis, event_slice)
+					edges.append((slice_id, event.id))
+		G = Graph()
+		G.add_nodes_from(slices_ids.union(events_ids))
+		G.add_edges_from(edges)
+		events_to_delete = []
+		for cluster in [x for x in connected_components(G) if x.intersection(slices_ids)]:
+			unify_slices = cluster.intersection(slices_ids)
+			unify_events = list(cluster.intersection(events_ids))
+			meta_slice = [x for x in (msg for cl in [current_slices[i] for i in unify_slices] for msg in cl)]
+			chain([current_slices[x] for x in unify_slices])
+			if not unify_events:
+				new_event = Event(self.mysql, self.redis, meta_slice)
 				self.events[new_event.id] = new_event
-			elif len(ancestors) == 1:
-				self.events[ancestors[0]].add_slice(event_slice)
 			else:
-				for ancestor in ancestors[1:]:
-					self.events[ancestors[0]].merge(self.events[ancestor])
-					del self.events[ancestor]
-					self.redis.delete("event:{}".format(ancestor))
-				self.events[ancestors[0]].add_slice(event_slice)
+				if len(unify_events) > 1:
+					for ancestor in unify_events[1:]:
+						self.events[unify_events[0]].merge(self.events[ancestor])
+						events_to_delete.append(ancestor)
+				self.events[unify_events[0]].add_slice(meta_slice)
+		for event in events_to_delete:
+			del self.events[event]
+			self.redis.delete("event:{}".format(event))
 
 	def dump_current_events(self):
 		"""
