@@ -4,7 +4,7 @@
 
 # SYSTEM
 from datetime import datetime, timedelta
-from itertools import groupby
+from itertools import groupby, chain
 from pickle import loads as ploads
 
 # DATABASE
@@ -58,17 +58,45 @@ class EventDetector():
 		Interrupts if self.interrupter is set to True.
 		"""
 		while True:
+			row = [0,0,0,0,0,0,0]
 			start_time = datetime.now()
 			self.build_current_trees()
+
 			if self.current_datapoints:
+				print 'phase1\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.current_datapoints)
+				start_time = datetime.now()
+
 				self.build_reference_trees(take_origins = True)
+
+				print 'phase2\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.reference_data)
+				start_time = datetime.now()
+
 				points = self.get_current_outliers()
+
+				print 'phase3\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(points)
+				start_time = datetime.now()
+
 				slice_clusters = self.dbscan_tweets(points)
+
+				print 'phase4\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(slice_clusters)
+				start_time = datetime.now()
+
 				self.get_previous_events()
+
+				print 'phase5\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+				start_time = datetime.now()
+
 				self.merge_slices_to_events(slice_clusters)
+
+				print 'phase6\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+				start_time = datetime.now()
+
 				self.dump_current_events()
-				secs = (datetime.now() - start_time).total_seconds()
-				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
+
+				print 'phase7\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+
+				#secs = (datetime.now() - start_time).total_seconds()
+				#print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
@@ -104,10 +132,10 @@ class EventDetector():
 			self.trees (List[KDTree])
 		"""
 		time = max([item['tstamp'] for sublist in self.current_datapoints.values() for item in sublist])
-		data = self.get_reference_data(time, days, take_origins)
+		self.reference_data = self.get_reference_data(time, days, take_origins)
 		networks = [1,2,3]
 		preproc = {net:{} for net in networks}
-		for item in data:
+		for item in self.reference_data:
 			try: 
 				preproc[item['network']][item['DATE(tstamp)']].append([item['lng'], item['lat']])
 			except KeyError: 
@@ -144,12 +172,12 @@ class EventDetector():
 			max_date = time
 		min_date = (max_date - timedelta(days = days)).replace(hour = lower_bound.hour, minute = lower_bound.minute)
 		if lower_bound.time() < upper_bound.time():
-			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), min_date.strftime('%H:%M:%S'), max_date.strftime('%H:%M:%S'))
+			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
 			data, i = exec_mysql(q, self.mysql)
 		else:
-			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '23:59:59';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), min_date.strftime('%H:%M:%S'))
+			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '23:59:59';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'))
 			data = exec_mysql(q, self.mysql)[0]
-			q = '''SELECT DATE_ADD(DATE(tstamp),INTERVAL -1 DAY) AS 'DATE(tstamp)', lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '00:00:00' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%H:%M:%S'))
+			q = '''SELECT DATE_ADD(DATE(tstamp),INTERVAL -1 DAY) AS 'DATE(tstamp)', lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '00:00:00' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
 			data += exec_mysql(q, self.mysql)[0]
 		return data
 
