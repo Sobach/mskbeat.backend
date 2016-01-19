@@ -50,7 +50,7 @@ class CollectorEmulator():
 			self.raw_data[i]['pub_tstamp'] = self.new_init + timedelta(seconds = seconds2add)
 	
 		# These vars are required for logging and writing status updates
-		self.new_end = self.raw_data[-1]['tstamp']
+		self.new_end = self.raw_data[-1]['pub_tstamp']
 		self.duration = (self.new_end - self.new_init).total_seconds()
 		self.total_msgs = len(self.raw_data)
 		self.i = 0
