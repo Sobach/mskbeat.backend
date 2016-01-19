@@ -168,6 +168,7 @@ class Event():
 		self.media.update(other_event.media)
 		self.event_update()
 		self.updated = datetime.now()
+		self.created = min((self.created, other_event.created))
 
 	def add_slice(self, new_slice):
 		"""
