@@ -1,10 +1,10 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-MSK BEAT SETTINGS
+MSK PULSE SETTINGS
 - databases credentials
 - SM credentials
-- city locations
+- city location
 - sliding window size
 """
 
@@ -26,27 +26,21 @@ TW_ACCESS_TOKEN_KEY = ''
 TW_ACCESS_TOKEN_SECRET = ''
 
 # Instagram credentials
-IG_ACCESS_TOKEN_1 = ''
-IG_ACCESS_TOKEN_2 = ''
+IG_ACCESS_TOKEN = ''
 
 # VKontakte credentials
 VK_ACCESS_TOKEN = ''
 
 # Locations
-"""
-TBD: Make one "locations" square and, produce all others using it. BBOX should be the main and the only
-"""
-TW_LOCATIONS = 'lng1,lat1,lng2,lat2'
-VK_LOCATIONS = {'lat':0, 'lng':0}
-IG_LOCATIONS = [(0, 0),(0, 0)] # (lng, lat) pairs as Instagram has small radius around every point
-BBOX = [float(x) for x in TW_LOCATIONS.split(',')]
+# specify geojson file
+BOUNDS_FILE = 'msk.geojson'
 
-# Used networks
-"""
-TBD: Remove letter codes from Collector, database, and settings. While these letters are not used in Detector
-"""
-NETS = {'i':0, 't':1, 'v':2}
-INV_NETS = {NETS[k]:k for k in NETS.keys()}
+from utilities import get_locations
+BOUNDS, BBOX, TW_LOCATIONS, VK_LOCATIONS, IG_LOCATIONS = get_locations(bfile = BOUNDS_FILE)
+
+# or bbox: simplified version
+# BBOX = [lng min, lat min, lng max, lat max]
+# BOUNDS, BBOX, TW_LOCATIONS, VK_LOCATIONS, IG_LOCATIONS = get_locations(bbox = BBOX)
 
 # Sliding window size in seconds: default = 1 hour
 TIME_SLIDING_WINDOW = 3600

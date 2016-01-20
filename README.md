@@ -1,11 +1,17 @@
-# MSK.BEAT BackEnd [Oxenaforda]
+# PULSE.MSK.RU BackEnd [Oxenaforda]
 
 ## About
 
-MSK.BEAT is a draft of new media: users construct agenda and content through their pesonal actions. 
+PULSE.MSK.RU is a draft of new media: users construct agenda and content through their pesonal actions. 
 Social media spreading and geolocation functions allow to get real-time city-buzz. 
 Using filtering, clustering, and some ML technics, it's possible to recognize events at the time of occurrence.
 Event content is extracted from disparate messages and media objects. Produced news are being classified.
+
+## FAQ [draft]
+
+#### Why Oxenaforda?
+
+\- I decided to mark major versions with ancient cities names. Oxenaforda stands for Oxford. And Oxford was selected because of this paper: [Editorial Algorithms: Using Social Media to Discover and Report Local News](http://www.aaai.org/ocs/index.php/ICWSM/ICWSM15/paper/view/10593)
 
 ## Change Log
 
@@ -15,9 +21,21 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - settings_template.py with comments;
 
+- emulator.py - separate file for CollectorEmulator with commandline tools;
+
+- Bounds could be specified using .geojson file. And Collectors could filter points: do they exist inside bounds or not.
+
 #### Changed:
 
-- Event class: new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
+- Event class: separate file (event.py); new properties (created, updated, start, end); new methods (is_successor, merge, backup, add_slice).
+
+- Collector class: rewritten to accomplish new requirements, UI removed; 
+
+- Collector class: VK messages collector updated from one central point to the grid;
+
+#### Removed:
+
+- Data sources networks one-letter codes deprecated;
 
 ### [v1.0.0 Oxenaforda] - 2015-12-25
 
@@ -39,18 +57,24 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ## Third-party dependencies:
 
-- DATABASES: redis, PySQLPool, MySQLdb;
+- NETWORKING: [requests](http://docs.python-requests.org/en/latest/), [TwitterAPI](https://github.com/geduldig/TwitterAPI);
 
-- CALCULUS: numpy, networkx, sklearn, scipy;
+- DATABASES: [redis](https://pypi.python.org/pypi/redis), [PySQLPool](https://pythonhosted.org/PySQLPool/tutorial.html), [MySQLdb](http://mysql-python.sourceforge.net/);
 
-- NLTK: pymorphy2, nltk.
+- CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/), [shapely](http://toblerity.org/shapely/);
+
+- NLP: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
 
 ## Files:
 
 - collector.py: contains classes for online data parsing in Instagram, Twitter, and VKontakte. Also has console UI. TBD: remove console UI; rewrite output queues (like in CollectorEmulator); fix bugs;
 
-- detector.py: currently main working file; Event, EventDetector, and CollectorEmulator classes inside (TBD: remove emulator to a separate file with commandline tools);
+- detector.py: EventDetector class - infinity loop, looking for messages outliers, using current topology, and merging messages into slices, and slices - into events. TBD: events validator algorithm;
 
-- detector_legacy.py: "ancient" project for event detector, currently deprecated, but some code bieces could be useful.
+- event.py: Event object - event candidate, produced by EventDetector. Stores all event-related data;
 
-- settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings.
+- settings_template.py: settings.py is required file for backend, but it contains sensitive data (SM credentials). This is a template for settings;
+
+- emulator.py: CollectorEmulator class;
+
+- utilities.py: number of separate utilities, used in other parts and classes, without common importing.
