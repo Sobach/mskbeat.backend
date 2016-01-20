@@ -25,7 +25,7 @@ from TwitterAPI import TwitterAPI, TwitterRequestError, TwitterConnectionError
 from shapely.geometry import Point
 
 # SELF IMPORT
-from settings import *
+from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, TW_CONSUMER_KEY, TW_CONSUMER_SECRET, TW_ACCESS_TOKEN_KEY, TW_ACCESS_TOKEN_SECRET, IG_ACCESS_TOKEN, VK_ACCESS_TOKEN, BOUNDS, TW_LOCATIONS, VK_LOCATIONS, IG_LOCATIONS, TIME_SLIDING_WINDOW
 from utilities import get_mysql_con, exec_mysql
 
 class TwitterStreamThread(Thread):
@@ -111,7 +111,7 @@ class TwitterStreamThread(Thread):
 class InstagramHelperThread(Thread):
 	"""
 	Instagram media collector assistant. Inherits from threading.Thread, so can be used in parallel with other collector classes.
-	Requires IG_ACCESS_TOKEN_1 constants to get access token.
+	Requires IG_ACCESS_TOKEN constants to get access token.
 	Object gets instagram links from queue:instagram Redis key and gets all the data from the link.
 	Saves data to media MySQL table.
 	"""
@@ -136,7 +136,7 @@ class InstagramHelperThread(Thread):
 		while True:
 			data = jloads(self.redis.blpop('queue:instagram')[1])
 			try:
-				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN_1)
+				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN)
 				photo_data = get(url, stream=False, timeout=10)
 			except (IndexError, ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error) as e:
 				pass
@@ -150,7 +150,7 @@ class InstagramHelperThread(Thread):
 class InstagramStreamThread(Thread):
 	"""
 	Instagram collector class. Deals with Instagram API. Inherits from threading.Thread, so can be used in parallel with other collector classes.
-	Requires IG_LOCATIONS, IG_ACCESS_TOKEN_1 constants.	If filter_bounds is True, requires BOUNDS constant.
+	Requires IG_LOCATIONS, IG_ACCESS_TOKEN constants.	If filter_bounds is True, requires BOUNDS constant.
 	Object dumps messages to MySQL, saves it to Redis with expiration in TIME_SLIDING_WINDOW seconds, and updates statistics:ig_last key in Redis.
 	"""
 
@@ -180,7 +180,7 @@ class InstagramStreamThread(Thread):
 			for i in range(len(IG_LOCATIONS)):
 				api_time = int(time())
 				url = 'https://api.instagram.com/v1/media/search?lat={}&lng={}&min_timestamp={}&distance=5000&access_token={}'.format(
-					IG_LOCATIONS[i][1], IG_LOCATIONS[i][0], self.last_time[i], IG_ACCESS_TOKEN_1)
+					IG_LOCATIONS[i][1], IG_LOCATIONS[i][0], self.last_time[i], IG_ACCESS_TOKEN)
 				try:
 					resp = get(url, stream=False, timeout=10)
 				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error) as e:

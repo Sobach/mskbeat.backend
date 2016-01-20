@@ -187,9 +187,9 @@ class Event():
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
 		"""
-		q = u'''INSERT INTO events(id, start, end) VALUES ("{}", "{}", "{}");'''.format(self.id, self.start, self.end)
+		q = u'''INSERT IGNORE INTO events(id, start, end) VALUES ("{}", "{}", "{}");'''.format(self.id, self.start, self.end)
 		exec_mysql(q, self.mysql)
-		q = '''INSERT INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['("{}","{}")'.format(x, self.id) for x in self.messages.keys()]))
+		q = '''INSERT IGNORE INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['("{}","{}")'.format(x, self.id) for x in self.messages.keys()]))
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 

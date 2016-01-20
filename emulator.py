@@ -12,8 +12,8 @@ from MySQLdb import escape_string
 from redis.exceptions import ResponseError
 
 # SELF IMPORT
-from settings import *
-from utilities import get_mysql_con, exec_mysql
+from settings import TIME_SLIDING_WINDOW
+from utilities import exec_mysql
 
 class CollectorEmulator():
 	"""
@@ -126,7 +126,7 @@ class CollectorEmulator():
 		stdout.write(self.previous_out)
 		self.i+=1
 		if message['id'] == 0:
-			stdout.write('\n')
+			stdout.write('\n\n')
 
 if __name__ == "__main__":
 	from argparse import ArgumentParser
@@ -153,10 +153,9 @@ if __name__ == "__main__":
 	elif args.period == "month":
 		q = '''SELECT * FROM tweets_origins WHERE tstamp >= '2015-06-21 00:00:00' AND tstamp <= '2015-07-18 00:00:00';'''
 	if args.action:
-		from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_DB
+		from settings import REDIS_HOST, REDIS_PORT, REDIS_DB
 		from redis import StrictRedis
-		from PySQLPool import getNewPool, getNewConnection
-		from utilities import exec_mysql
+		from utilities import get_mysql_con
 		redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 		mysql_db = 	get_mysql_con()
 		dataset = exec_mysql(q, mysql_db)[0]

@@ -26,8 +26,7 @@ TW_ACCESS_TOKEN_KEY = ''
 TW_ACCESS_TOKEN_SECRET = ''
 
 # Instagram credentials
-IG_ACCESS_TOKEN_1 = ''
-IG_ACCESS_TOKEN_2 = ''
+IG_ACCESS_TOKEN = ''
 
 # VKontakte credentials
 VK_ACCESS_TOKEN = ''

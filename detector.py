@@ -20,7 +20,7 @@ from sklearn.cluster import DBSCAN
 from math import radians, cos, sin, asin, sqrt
 
 # SELF IMPORT
-from settings import *
+from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
 from utilities import get_mysql_con, exec_mysql
 from event import Event
 
@@ -63,37 +63,37 @@ class EventDetector():
 			self.build_current_trees()
 
 			if self.current_datapoints:
-				print 'phase1\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.current_datapoints)
+				print 'phase1\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.current_datapoints)
 				start_time = datetime.now()
 
 				self.build_reference_trees(take_origins = True)
 
-				print 'phase2\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.reference_data)
+				print 'phase2\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.reference_data)
 				start_time = datetime.now()
 
 				points = self.get_current_outliers()
 
-				print 'phase3\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(points)
+				print 'phase3\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(points)
 				start_time = datetime.now()
 
 				slice_clusters = self.dbscan_tweets(points)
 
-				print 'phase4\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(slice_clusters)
+				print 'phase4\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(slice_clusters)
 				start_time = datetime.now()
 
 				self.get_previous_events()
 
-				print 'phase5\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+				print 'phase5\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
 				start_time = datetime.now()
 
 				self.merge_slices_to_events(slice_clusters)
 
-				print 'phase6\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+				print 'phase6\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
 				start_time = datetime.now()
 
 				self.dump_current_events()
 
-				print 'phase7\t', '%.6f' % (datetime.now() - start_time).total_seconds(), len(self.events)
+				print 'phase7\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
 
 				#secs = (datetime.now() - start_time).total_seconds()
 				#print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
