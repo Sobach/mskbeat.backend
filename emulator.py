@@ -80,10 +80,10 @@ class CollectorEmulator():
 			self.redis.delete(*self.redis.keys('event:*'))
 		except ResponseError:
 			pass
-		try:
-			self.redis.delete(*self.redis.keys('dumped:*'))
-		except ResponseError:
-			pass
+		#try:
+		#	self.redis.delete(*self.redis.keys('dumped:*'))
+		#except ResponseError:
+		#	pass
 
 	def run(self):
 		"""
@@ -157,7 +157,7 @@ if __name__ == "__main__":
 		from redis import StrictRedis
 		from utilities import get_mysql_con
 		redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
-		mysql_db = 	get_mysql_con()
+		mysql_db = get_mysql_con()
 		dataset = exec_mysql(q, mysql_db)[0]
 		if args.action == 'run':
 			emulator = CollectorEmulator(mysql_db, redis_db, dataset=dataset, fast_forward_ratio=args.fastforward, start_timeout=args.timeout, run_on_init = True, truncate_on_init = False)

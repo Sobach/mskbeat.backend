@@ -255,7 +255,7 @@ class EventDetector():
 		self.events = {}
 		for key in self.redis.keys("event:*"):
 			event = Event(self.mysql, self.redis)
-			event.loads(key[6:])
+			event.load(key[6:])
 			self.events[event.id] = event
 
 	def merge_slices_to_events(self, current_slices):
@@ -305,7 +305,7 @@ class EventDetector():
 			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
 				event.backup()
 			else:
-				event.dumps()
+				event.dump()
 
 if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)

@@ -90,6 +90,8 @@ class Event():
 		self.tokenizer = TreebankWordTokenizer()
 		self.word = compile(r'^\w+$', flags = UNICODE | IGNORECASE)
 		self.url_re = compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+		self.validity = None
+		self.verification = None
 
 		if points:
 			self.id = str(uuid4())
@@ -119,10 +121,11 @@ class Event():
 		Commands to calculate all data on event, based on messages and media.
 		"""
 		self.add_stem_texts()
-		self.build_tokens_graph()
-		self.score_messages_by_text()
+		#self.build_tokens_graph()
+		#self.score_messages_by_text()
 		self.event_summary_stats()
-		self.add_geo_shapes()
+		#self.add_geo_shapes()
+		self.is_valid()
 
 	def is_successor(self, slice_ids, threshold = 0):
 		"""
@@ -135,6 +138,17 @@ class Event():
 		if len(set(self.messages.keys()).intersection(slice_ids)) > threshold:
 			return True
 		return False
+
+	def is_valid(self):
+		"""
+		Method for Decision tree classifier to determine, if event is actually event, and not a random messages contilation.
+		"""
+		if self.validity:
+			return True
+		tree = ploads(self.redis.get('tree_validity_classifier'))
+		row = [len(self.messages.values()), len(self.media.values()), self.authors, self.entropy, self.ppa, self.most_active_author]
+		self.validity = bool(tree.predict(row)[0])
+		return self.validity
 
 	def is_mono_network(self):
 		"""
@@ -194,29 +208,38 @@ class Event():
 		self.redis.delete("event:{}".format(self.id))
 
 		# Dump to Redis event to restore it in case
-		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media}
-		data = pdumps(todump)
-		self.redis.set("dumped:{}".format(self.id), data)
+		self.dump("dumped")
 
-	def loads(self, event_id):
+	def load(self, event_id, redis_prefix='event'):
 		"""
 		Method for deserializing and loading event from Redis database.
 		"""
-		event_data = ploads(self.redis.get('event:{}'.format(event_id)))
+		event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
+		self.loads(event_data)
+
+	def dump(self, redis_prefix='event'):
+		"""
+		Method for serializing and dumping event to Redis database.
+		"""
+		data = self.dumps()
+		self.redis.set("{}:{}".format(redis_prefix, self.id), data)
+
+	def loads(self, data):
+		event_data = ploads(data)
 		self.id = event_data['id']
 		self.created = event_data['created']
 		self.updated = event_data['updated']
 		self.messages = event_data['messages']
 		self.media = event_data['media']
+		if 'verification' in event_data.keys():
+			self.verification = event_data['verification']
+		if 'validation' in event_data.keys():
+			self.validation = event_data['validation']
 		self.event_update()
 
 	def dumps(self):
-		"""
-		Method for serializing and dumping event to Redis database.
-		"""
-		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media}
-		data = pdumps(todump)
-		self.redis.set("event:{}".format(self.id), data)
+		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media, 'verification':self.verification, 'validation':self.validity}
+		return pdumps(todump)
 
 	def get_messages_data(self, ids=None):
 		"""
@@ -251,6 +274,8 @@ class Event():
 		Method calculates self.entropy and self.ppa statistics, updates self.start and self.end timestamps.
 		"""
 		authorsip_stats = [len(tuple(i[1])) for i in groupby(sorted(self.messages.values(), key=lambda x:x['user']), lambda z: z['user'])]
+		self.authors = len(authorsip_stats)
+		self.most_active_author = max(authorsip_stats)/float(len(self.messages.values()))
 		self.entropy = entropy(authorsip_stats)
 		self.ppa = mean(authorsip_stats)
 		self.start = min([x['tstamp'] for x in self.messages.values()])
