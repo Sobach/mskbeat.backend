@@ -10,14 +10,16 @@ from pickle import loads as ploads, dumps as pdumps
 from uuid import uuid4
 
 # MATH
-from numpy import mean
-from networkx import Graph, connected_components, find_cliques
+from numpy import mean, std
 from scipy.stats import entropy
 from shapely.geometry import MultiPoint
 
 # NLTK
 from pymorphy2 import MorphAnalyzer
 from nltk.tokenize import TreebankWordTokenizer
+from gensim.corpora import Dictionary
+from gensim.models import TfidfModel
+from gensim.similarities import MatrixSimilarity
 
 # SELF IMPORT
 from utilities import exec_mysql
@@ -72,7 +74,7 @@ class Event():
 		tokens (Set[str]): collection of stemmed tokens from raw text; created in add_stem_texts()
 		tstamp (datetime): 'created at' timestamp
 		user (int): user id, absolutely unique for one network, but matches between networks are possible
-		tokens_score (float): agreement estimation with average cluster text, based on Jaccard distance [0:2]
+		token_score (float): agreement estimation with average cluster text, based on Jaccard distance [0:2]
 	"""
 
 	def __init__(self, mysql_con, redis_con, points = []):
@@ -121,10 +123,8 @@ class Event():
 		Commands to calculate all data on event, based on messages and media.
 		"""
 		self.add_stem_texts()
-		#self.build_tokens_graph()
-		#self.score_messages_by_text()
+		self.score_messages_by_text()
 		self.event_summary_stats()
-		#self.add_geo_shapes()
 		self.is_valid()
 
 	def is_successor(self, slice_ids, threshold = 0):
@@ -139,15 +139,16 @@ class Event():
 			return True
 		return False
 
-	def is_valid(self):
+	def is_valid(self, classifier=None):
 		"""
 		Method for Decision tree classifier to determine, if event is actually event, and not a random messages contilation.
 		"""
 		if self.validity:
 			return True
-		tree = ploads(self.redis.get('tree_validity_classifier'))
+		if not classifier:
+			classifier = ploads(self.redis.get('tree_validity_classifier'))
 		row = [len(self.messages.values()), len(self.media.values()), self.authors, self.entropy, self.ppa, self.most_active_author]
-		self.validity = bool(tree.predict(row)[0])
+		self.validity = bool(classifier.predict(row)[0])
 		return self.validity
 
 	def is_mono_network(self):
@@ -278,6 +279,7 @@ class Event():
 		self.most_active_author = max(authorsip_stats)/float(len(self.messages.values()))
 		self.entropy = entropy(authorsip_stats)
 		self.ppa = mean(authorsip_stats)
+		self.relevant_messages_share = float(len([x for x in self.messages.values() if x['token_score'] > 0]))/len(self.messages.values())
 		self.start = min([x['tstamp'] for x in self.messages.values()])
 		self.end = max([x['tstamp'] for x in self.messages.values()])
 
@@ -291,56 +293,25 @@ class Event():
 				txt = sub(self.url_re, '', txt)
 				self.messages[i]['tokens'] = {self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))}
 
-	def add_geo_shapes(self):
+	def score_messages_by_text(self, deviation_threshold=2):
 		"""
-		Method adds convex hull representations of the event (self.event_hull and self.core_hull).
+		Method calculates token_score parameter for self.messages.
 		"""
-		self.event_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values()]).convex_hull
-		self.core_hull = MultiPoint([(x['lng'], x['lat']) for x in self.messages.values() if x['is_core']]).convex_hull
-
-	def build_tokens_graph(self, threshold=0):
-		"""
-		Method constructs tokens co-occurrance undirected graph to determine graph vocabulary (largest connected component) and core (largest clique).
-		TBD: add graph to event arguments (?)
-
-		Args:
-			threshold (int): minimal number of edge weight (co-occurrences count) to rely on the edge.
-		"""
-		G = Graph()
-		edges = {}
-		for item in self.messages.values():
-			tokens = {x for x in item['tokens'] if len(x) > 2}
-			if len(tokens) < 2:
-				continue
-			for pair in combinations(tokens, 2):
+		texts = [x['tokens'] for x in self.messages.values()]
+		top_words = {}
+		for doc in texts:
+			for token in doc:
 				try:
-					edges[tuple(sorted(pair))] += 1
+					top_words[token] += 1
 				except KeyError:
-					edges[tuple(sorted(pair))] = 1
-		edges = {k:v for k,v in edges.items() if v > threshold}
-		G.add_edges_from(edges.keys())
-		try:
-			self.vocabulary = set(sorted(connected_components(G), key = len, reverse=True)[0])
-		except IndexError:
-			self.vocabulary = set()
-		try:
-			self.core = set(sorted(find_cliques(G), key = len, reverse=True)[0])
-		except IndexError:
-			self.core = set()
-
-	def score_messages_by_text(self):
-		"""
-		Method calculates token_score parameter for self.messages. Two Jaccard distances are used (between message tokens and event vocabulary + core).
-		"""
-		for msg_id in self.messages:
-			try:
-				vocab_score = float(len(self.vocabulary.intersection(self.messages[msg_id]['tokens'])))/\
-				len(self.vocabulary.union(self.messages[msg_id]['tokens']))
-			except ZeroDivisionError:
-				vocab_score = 0
-			try:
-				core_score = float(len(self.core.intersection(self.messages[msg_id]['tokens'])))/\
-				len(self.core.union(self.messages[msg_id]['tokens']))
-			except ZeroDivisionError:
-				core_score = 0
-			self.messages[msg_id]['tokens_score'] = vocab_score + core_score
+					top_words[token] = 1
+		th_vals = [x[1] for x in top_words.items()]
+		threshold = mean(th_vals) + deviation_threshold * std(th_vals)
+		top_words = [k for k,v in top_words.items() if v > threshold]
+		dictionary = Dictionary(texts)
+		corpus = [dictionary.doc2bow(text) for text in texts]
+		tfidf = TfidfModel(corpus, id2word=dictionary)
+		index = MatrixSimilarity(tfidf[corpus])
+		scores = index[dictionary.doc2bow(top_words)]
+		for i in len(scores):
+			self.messages.values()[i]['token_score'] = scores[i]
