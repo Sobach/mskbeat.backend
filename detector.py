@@ -15,6 +15,7 @@ from numpy import array, mean, std, absolute, seterr
 from networkx import Graph, connected_components
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
+from sklearn.tree import DecisionTreeClassifier
 
 # SYSTEM MATH
 from math import radians, cos, sin, asin, sqrt
@@ -57,46 +58,17 @@ class EventDetector():
 		Main object loop. Looks for actual messages, DBSCANs them, and merges with previously computed events.
 		Interrupts if self.interrupter is set to True.
 		"""
+		#classifier = self.build_tree_classifier()
 		while True:
-			row = [0,0,0,0,0,0,0]
-			start_time = datetime.now()
 			self.build_current_trees()
-
 			if self.current_datapoints:
-				print 'phase1\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.current_datapoints)
-				start_time = datetime.now()
-
 				self.build_reference_trees(take_origins = True)
-
-				print 'phase2\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.reference_data)
-				start_time = datetime.now()
-
 				points = self.get_current_outliers()
-
-				print 'phase3\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(points)
-				start_time = datetime.now()
-
 				slice_clusters = self.dbscan_tweets(points)
-
-				print 'phase4\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(slice_clusters)
-				start_time = datetime.now()
-
 				self.get_previous_events()
-
-				print 'phase5\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
-				start_time = datetime.now()
-
 				self.merge_slices_to_events(slice_clusters)
-
-				print 'phase6\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
-				start_time = datetime.now()
-
 				self.dump_current_events()
-
-				print 'phase7\t', '%.6f' % (datetime.now() - start_time).total_seconds(), '\t', len(self.events)
-
-				#secs = (datetime.now() - start_time).total_seconds()
-				#print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
+				print '{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
@@ -117,6 +89,21 @@ class EventDetector():
 		km = c * 6371
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
+
+	def build_tree_classifier(self):
+		f = open('goldenstandart.pickle', 'rb')
+		l = ploads(f.read())
+		f.close()
+		events = []
+		data = []
+		result = []
+		for e in l:
+			ev = Event(self.mysql, self.redis)
+			ev.loads(e)
+			data.append([len(ev.messages.values()), len(ev.media.values()), ev.authors, ev.entropy, ev.ppa, ev.most_active_author])
+			result.append(int(ev.verification))
+		classifier = DecisionTreeClassifier().fit(data, result)
+		return classifier
 
 	def build_reference_trees(self, days = 14, take_origins = False, min_points = 10):
 		"""
