@@ -123,6 +123,18 @@ def create_mysql_tables():
 		"""CREATE TABLE `media` (`id` int(11) unsigned NOT NULL AUTO_INCREMENT, `tweet_id` varchar(40) DEFAULT NULL, `url` varchar(250) DEFAULT NULL, PRIMARY KEY (`id`), KEY `tweet_id` (`tweet_id`)) ENGINE=InnoDB AUTO_INCREMENT=2128971 DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `events` (`id` varchar(20) NOT NULL DEFAULT '', `start` datetime DEFAULT NULL, `end` datetime DEFAULT NULL, `vocabulary` text, `core` text, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `event_msgs` (`id` int(11) NOT NULL AUTO_INCREMENT, `msg_id` varchar(40) DEFAULT NULL, `event_id` varchar(40) DEFAULT NULL, PRIMARY KEY (`id`), UNIQUE KEY `msg_id` (`msg_id`,`event_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+		"""CREATE TABLE `event_trainer` (`id` int(11) unsigned NOT NULL AUTO_INCREMENT, `tstamp` datetime DEFAULT NULL, `msg_num` int(11) DEFAULT NULL, `media_num` int(11) DEFAULT NULL, `users_num` int(11) DEFAULT NULL, `top_user_share` float DEFAULT NULL, `users_share` float DEFAULT NULL, `users_entropy` float DEFAULT NULL, `posts_per_user` float DEFAULT NULL, `relevant_msg_share` float DEFAULT NULL, `duration` int(11) DEFAULT NULL, `verification` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`) ENGINE=InnoDB AUTO_INCREMENT=1129 DEFAULT CHARSET=utf8mb4;""",
 	]
 	for tab in tabs:
 		exec_mysql(tab, con)
+
+def build_tree_classifier():
+	from sklearn.tree import DecisionTreeClassifier
+	events = exec_mysql('SELECT * FROM event_trainer', get_mysql_con())[0]
+	data = []
+	result = []
+	for e in events:
+		data.append([e['msg_num'], e['media_num'], e['users_num'], e['top_user_share'], e['users_share'], e['users_entropy'], e['posts_per_user'], e['relevant_msg_share'], e['duration']])
+		result.append(e['verification'])
+	classifier = DecisionTreeClassifier().fit(data, result)
+	return classifier

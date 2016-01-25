@@ -80,10 +80,10 @@ class CollectorEmulator():
 			self.redis.delete(*self.redis.keys('event:*'))
 		except ResponseError:
 			pass
-		#try:
-		#	self.redis.delete(*self.redis.keys('dumped:*'))
-		#except ResponseError:
-		#	pass
+		try:
+			self.redis.delete(*self.redis.keys('dumped:*'))
+		except ResponseError:
+			pass
 
 	def run(self):
 		"""

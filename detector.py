@@ -15,14 +15,13 @@ from numpy import array, mean, std, absolute, seterr
 from networkx import Graph, connected_components
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
-from sklearn.tree import DecisionTreeClassifier
 
 # SYSTEM MATH
 from math import radians, cos, sin, asin, sqrt
 
 # SELF IMPORT
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
-from utilities import get_mysql_con, exec_mysql
+from utilities import get_mysql_con, exec_mysql, build_tree_classifier
 from event import Event
 
 seterr(divide='ignore', invalid='ignore')
@@ -51,6 +50,7 @@ class EventDetector():
 		self.calcualte_eps_dbscan()
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
+		self.classifier = build_tree_classifier()
 		self.events = {}
 
 	def run(self):
@@ -58,17 +58,18 @@ class EventDetector():
 		Main object loop. Looks for actual messages, DBSCANs them, and merges with previously computed events.
 		Interrupts if self.interrupter is set to True.
 		"""
-		#classifier = self.build_tree_classifier()
 		while True:
 			self.build_current_trees()
 			if self.current_datapoints:
+				start = datetime.now()
 				self.build_reference_trees(take_origins = True)
 				points = self.get_current_outliers()
 				slice_clusters = self.dbscan_tweets(points)
 				self.get_previous_events()
 				self.merge_slices_to_events(slice_clusters)
 				self.dump_current_events()
-				print '{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
+				secs = (datetime.now() - start).total_seconds()
+				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
@@ -89,21 +90,6 @@ class EventDetector():
 		km = c * 6371
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
-
-	def build_tree_classifier(self):
-		f = open('goldenstandart.pickle', 'rb')
-		l = ploads(f.read())
-		f.close()
-		events = []
-		data = []
-		result = []
-		for e in l:
-			ev = Event(self.mysql, self.redis)
-			ev.loads(e)
-			data.append([len(ev.messages.values()), len(ev.media.values()), ev.authors, ev.entropy, ev.ppa, ev.most_active_author])
-			result.append(int(ev.verification))
-		classifier = DecisionTreeClassifier().fit(data, result)
-		return classifier
 
 	def build_reference_trees(self, days = 14, take_origins = False, min_points = 10):
 		"""
@@ -241,7 +227,7 @@ class EventDetector():
 		"""
 		self.events = {}
 		for key in self.redis.keys("event:*"):
-			event = Event(self.mysql, self.redis)
+			event = Event(self.mysql, self.redis, self.classifier)
 			event.load(key[6:])
 			self.events[event.id] = event
 
@@ -269,7 +255,7 @@ class EventDetector():
 			meta_slice = [x for x in (msg for cl in [current_slices[i] for i in unify_slices] for msg in cl)]
 			chain([current_slices[x] for x in unify_slices])
 			if not unify_events:
-				new_event = Event(self.mysql, self.redis, meta_slice)
+				new_event = Event(self.mysql, self.redis, self.classifier, meta_slice)
 				self.events[new_event.id] = new_event
 			else:
 				if len(unify_events) > 1:
