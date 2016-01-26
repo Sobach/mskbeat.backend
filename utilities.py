@@ -115,7 +115,8 @@ def create_mysql_tables():
 		tweets (raw messages data);
 		media (links to media files in the messages);
 		events (table for events, computed by Detector, and archieved);
-		event_msgs (foreign key storage for links between messages and events).
+		event_msgs (foreign key storage for links between messages and events);
+		event_trainer (table, containing training set for event classifier);
 	"""
 	con = get_mysql_con()
 	tabs = [
@@ -129,6 +130,14 @@ def create_mysql_tables():
 		exec_mysql(tab, con)
 
 def build_event_classifier(classifier_type="tree", balanced=False, classifier_params={}):
+	"""
+	Function for creating event classifier, which determines, whether event is real or not.
+
+	Args:
+		classifier_type (str): "tree" stands for decision tree, and "adaboost" for AdaBoost Classifier.
+		balanced (bool): whether to balance number of true and false samples in training set, or not.
+		classifier_params (dict): additional parameters, that would be passed to the classifier object on initialization.
+	"""
 	if classifier_type == 'tree':
 		from sklearn.tree import DecisionTreeClassifier
 		classifier = DecisionTreeClassifier(**classifier_params)
