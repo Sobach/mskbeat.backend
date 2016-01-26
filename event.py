@@ -94,6 +94,7 @@ class Event():
 		self.url_re = compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
 		self.validity = None
 		self.verification = None
+		self.cores = {}
 		self.classifier = classifier
 
 		if points:
@@ -124,6 +125,9 @@ class Event():
 		Commands to calculate all data on event, based on messages and media.
 		"""
 		self.add_stem_texts()
+		self.create_core(deviation_threshold = 1)
+		self.create_core(deviation_threshold = 2)
+		self.create_core(deviation_threshold = 3)
 		self.score_messages_by_text()
 		self.event_summary_stats()
 		self.is_valid()
@@ -296,15 +300,11 @@ class Event():
 				txt = sub(self.url_re, '', txt)
 				self.messages[i]['tokens'] = {self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))}
 
-	def score_messages_by_text(self, deviation_threshold=2):
+	def create_core(self, deviation_threshold=2):
 		"""
-		Method calculates token_score parameter for self.messages.
+		Method creates k-core of common words for event.
 		"""
 		texts = [x['tokens'] for x in self.messages.values()]
-		if not sum([bool(x) for x in texts]) or len(set([frozenset(x) for x in texts])) == 1:
-			for k in self.messages.keys():
-				self.messages[k]['token_score'] = 0
-			return
 		top_words = {}
 		for doc in texts:
 			for token in doc:
@@ -314,11 +314,21 @@ class Event():
 					top_words[token] = 1
 		th_vals = [x[1] for x in top_words.items()]
 		threshold = mean(th_vals) + deviation_threshold * std(th_vals)
-		self.core = [k for k,v in top_words.items() if v > threshold]
+		self.cores[deviation_threshold] = [k for k,v in top_words.items() if v > threshold]
+
+	def score_messages_by_text(self, deviation_threshold=2):
+		"""
+		Method calculates token_score parameter for self.messages.
+		"""
+		texts = [x['tokens'] for x in self.messages.values()]
+		if not sum([bool(x) for x in texts]) or len(set([frozenset(x) for x in texts])) == 1:
+			for k in self.messages.keys():
+				self.messages[k]['token_score'] = 0
+			return
 		dictionary = Dictionary(texts)
 		corpus = [dictionary.doc2bow(text) for text in texts]
 		tfidf = TfidfModel(corpus, id2word=dictionary)
 		index = MatrixSimilarity(tfidf[corpus])
-		scores = index[dictionary.doc2bow(self.core)]
+		scores = index[dictionary.doc2bow(self.cores[deviation_threshold])]
 		for i in range(len(scores)):
 			self.messages.values()[i]['token_score'] = scores[i]
