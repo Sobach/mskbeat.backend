@@ -128,13 +128,26 @@ def create_mysql_tables():
 	for tab in tabs:
 		exec_mysql(tab, con)
 
-def build_tree_classifier():
-	from sklearn.tree import DecisionTreeClassifier
+def build_event_classifier(classifier_type="tree", balanced=False, classifier_params={}):
+	if classifier_type == 'tree':
+		from sklearn.tree import DecisionTreeClassifier
+		classifier = DecisionTreeClassifier(**classifier_params)
+	elif classifier_type == 'adaboost':
+		from sklearn.ensemble import AdaBoostClassifier
+		classifier = AdaBoostClassifier(**classifier_params)
 	events = exec_mysql('SELECT * FROM event_trainer', get_mysql_con())[0]
+	if balanced:
+		from random import sample
+		real_events = [x for x in events if x['verification']]
+		fake_events = [x for x in events if not x['verification']]
+		n = min([len(real_events), len(fake_events)])
+		real_events = sample(real_events, n)
+		fake_events = sample(fake_events, n)
+		events = real_events + fake_events
 	data = []
 	result = []
 	for e in events:
 		data.append([e['msg_num'], e['media_num'], e['users_num'], e['top_user_share'], e['users_share'], e['users_entropy'], e['posts_per_user'], e['relevant_msg_share'], e['duration']])
 		result.append(e['verification'])
-	classifier = DecisionTreeClassifier().fit(data, result)
+	classifier.fit(data, result)
 	return classifier

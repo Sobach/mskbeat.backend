@@ -21,7 +21,7 @@ from math import radians, cos, sin, asin, sqrt
 
 # SELF IMPORT
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
-from utilities import get_mysql_con, exec_mysql, build_tree_classifier
+from utilities import get_mysql_con, exec_mysql, build_event_classifier
 from event import Event
 
 seterr(divide='ignore', invalid='ignore')
@@ -50,7 +50,7 @@ class EventDetector():
 		self.calcualte_eps_dbscan()
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
-		self.classifier = build_tree_classifier()
+		self.classifier = build_event_classifier()
 		self.events = {}
 
 	def run(self):
@@ -69,7 +69,7 @@ class EventDetector():
 				self.merge_slices_to_events(slice_clusters)
 				self.dump_current_events()
 				secs = (datetime.now() - start).total_seconds()
-				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len(self.current_datapoints.values()))
+				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
