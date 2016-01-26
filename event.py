@@ -38,29 +38,33 @@ class Event():
 		self.end (datetime): timestamp of the last message in the self.messages dict
 		self.messages (Dict[dict]): raw tweets from database, enriched with weight, is_core params (on init), tokens (after add_stem_texts)
 		self.media (Dict[dict]): raw media objects from database
-		self.vocabulary (Set): tokens, that form the largest connected component in tokens graph; computed in build_tokens_graph() method
-		self.core (Set): tokens, that form the largest clique (maximal connected component) in tokens graph; computed in build_tokens_graph() method
+		self.cores (Dict[list]): tokens, that form the most common vocabulary for the event; computed in create_core() method
 		self.entropy (float): entropy for authorship: 0 for mono-authored cluster; computed in event_summary_stats() method
 		self.ppa (float): average number of posts per one author; computed in event_summary_stats() method
-		self.event_hull (shapely.geometry.polygon.Polygon): convex hull for all messages of the event; computed in add_geo_shapes() method
-		self.core_hull (shapely.geometry.polygon.Polygon): convex hull for core messages of the event (recognized as core by DBSCAN); computed in add_geo_shapes() method
+		self.authors (int): number of unique authors for event
+		self.most_active_author (float): share of messages, written by one (most active author)
+		self.authors_share (float): number of authors divided by number of messages
+		self.relevant_messages_share (float): share of messages with token_score above zero
+		self.duration (int): total seconds from self.start to self.end
+		self.classifier (Object): classifier for deciding, whether event is real
+		self.validity (bool): Classifier verdict, whether event is real or not
+		self.verification (bool): Handmade verification of event quality
 
 	Methods:
 		self.event_update: commands to calculate all data on event, based on messages and media
 		self.is_successor: examines, if current event have common messages with specified event slice
-		self.is_mono_network: examines, if current event is mononetwork, i.e. all the messages are from one network
-		self.convex_hull_intersection: calculates Jaccard distance for convex hulls and core convex hulls of two events
+		self.is_valid: method for classifier to determine, if event is actually event, and not a random messages contilation
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
 		self.backup: dump event to MySQL long-term storage, used for non-evaluating events
-		self.loads / self.dumps: serialize/deserialize event and put/get it to Redis
+		self.loads / self.dumps: serialize/deserialize event to/from string representation
+		self.load / self.dump: serialize/deserialize event and put/get it to Redis
 		self.get_messages_data: get MySQL data for messages ids
 		self.get_media_data: get MySQL data for media using existing messages ids
-		self.event_summary_stats: calculate entropy, ppa, start, and end statistics
+		self.event_summary_stats: calculate statistics and start/end time for event
 		self.add_stem_texts: add tokens lists to self.messages
-		self.add_geo_shapes: add convex hull representations of the event
-		self.build_tokens_graph: method constructs tokens co-occurrance undirected graph to determine graph vocabulary (largest connected component) and core (largest clique)
-		self.score_messages_by_text: method calculates token_score for messages elements. Jaccard distance is used (between message tokens and event vocabulary + core)
+		self.create_core: create vocabulary of most important words for the event
+		self.score_messages_by_text: method calculates token_score for messages. TF/IDF likelihood with core is used
 
 	Message keys:
 		cluster (int): legacy from DBSCAN - number of cluster (event ancestor)
@@ -84,6 +88,7 @@ class Event():
 		Args:
 			mysql_con (PySQLPoolConnection): MySQL connection Object
 			redis_con (StrictRedis): RedisDB connection Object
+			classifier (Object): scikit trained classifier to detect real and fake events
 			points (list[dict]): raw messages from event detector
 		"""
 		self.mysql = mysql_con
@@ -146,7 +151,7 @@ class Event():
 
 	def is_valid(self):
 		"""
-		Method for Decision tree classifier to determine, if event is actually event, and not a random messages contilation.
+		Method for Classifier to determine, if event is actually event, and not a random messages contilation.
 		"""
 		if self.validity:
 			return True
@@ -155,27 +160,6 @@ class Event():
 		row = [len(self.messages.values()), len(self.media.values()), self.authors, self.most_active_author, self.authors_share, self.entropy, self.ppa, self.relevant_messages_share, self.duration]
 		self.validity = bool(self.classifier.predict(row)[0])
 		return self.validity
-
-	def is_mono_network(self):
-		"""
-		Method examines, if current event is mono networked, i.e. all the messages are from one network (Instagram, Twitter, or Facebook)
-		"""
-		if len({x['network'] for x in self.messages.values()}) <= 1:
-			return True
-		return False
-
-	def convex_hull_intersection(self, other_event):
-		"""
-		Method calculates Jaccard distance for convex hulls and core convex hulls of two events.
-
-		Args:
-			other_event (Event): another event object - to intersect with
-		"""
-		if self.event_hull.disjoint(other_event.event_hull):
-			return 0, 0
-		hull_intersection = self.event_hull.intersection(other_event.event_hull).area / self.event_hull.union(other_event.event_hull).area
-		core_intersection = self.core_hull.intersection(other_event.core_hull).area / self.core_hull.union(other_event.core_hull).area
-		return hull_intersection, core_intersection
 
 	def merge(self, other_event):
 		"""
@@ -206,6 +190,7 @@ class Event():
 	def backup(self):
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
+		Additionally, creates "dumped" key in Redis.
 		"""
 		q = u'''INSERT IGNORE INTO events(id, start, end) VALUES ("{}", "{}", "{}");'''.format(self.id, self.start, self.end)
 		exec_mysql(q, self.mysql)
@@ -219,6 +204,9 @@ class Event():
 	def load(self, event_id, redis_prefix='event'):
 		"""
 		Method for deserializing and loading event from Redis database.
+		Args:
+			event_id (str): unique event isentifier
+			redis_prefix (str): prefix used in Redis database
 		"""
 		event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
 		self.loads(event_data)
@@ -226,11 +214,20 @@ class Event():
 	def dump(self, redis_prefix='event'):
 		"""
 		Method for serializing and dumping event to Redis database.
+
+		Args:
+			redis_prefix (str): prefix to use, when storing new key in Redis database
 		"""
 		data = self.dumps()
 		self.redis.set("{}:{}".format(redis_prefix, self.id), data)
 
 	def loads(self, data):
+		"""
+		Method for deserializing event from string.
+
+		Args:
+			data (str): pickle dump of event-required parameters.
+		"""
 		event_data = ploads(data)
 		self.id = event_data['id']
 		self.created = event_data['created']
@@ -244,6 +241,9 @@ class Event():
 		self.event_update()
 
 	def dumps(self):
+		"""
+		Method for serializing event to string.
+		"""
 		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media, 'verification':self.verification, 'validation':self.validity}
 		return pdumps(todump)
 
@@ -277,7 +277,7 @@ class Event():
 
 	def event_summary_stats(self):
 		"""
-		Method calculates self.entropy and self.ppa statistics, updates self.start and self.end timestamps.
+		Method calculates several statistics, updates self.start and self.end timestamps.
 		"""
 		authorsip_stats = [len(tuple(i[1])) for i in groupby(sorted(self.messages.values(), key=lambda x:x['user']), lambda z: z['user'])]
 		self.authors = len(authorsip_stats)
@@ -302,7 +302,10 @@ class Event():
 
 	def create_core(self, deviation_threshold=2):
 		"""
-		Method creates k-core of common words for event.
+		Method creates core of imprtant words for event.
+
+		Args:
+			deviation_threshold (int): number of standart deviations, that differs core tokens from average tokens
 		"""
 		texts = [x['tokens'] for x in self.messages.values()]
 		top_words = {}
@@ -319,6 +322,9 @@ class Event():
 	def score_messages_by_text(self, deviation_threshold=2):
 		"""
 		Method calculates token_score parameter for self.messages.
+
+		Args:
+			deviation_threshold (int): number of standart deviations, that differs core tokens from average tokens
 		"""
 		texts = [x['tokens'] for x in self.messages.values()]
 		if not sum([bool(x) for x in texts]) or len(set([frozenset(x) for x in texts])) == 1:
