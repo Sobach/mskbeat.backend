@@ -62,14 +62,14 @@ class EventDetector():
 			self.build_current_trees()
 			if self.current_datapoints:
 				start = datetime.now()
-				self.build_reference_trees(take_origins = True)
+				self.build_reference_trees(take_origins = False)
 				points = self.get_current_outliers()
 				slice_clusters = self.dbscan_tweets(points)
 				self.get_previous_events()
 				self.merge_slices_to_events(slice_clusters)
 				self.dump_current_events()
 				secs = (datetime.now() - start).total_seconds()
-				print '{} seconds,\t{} events,\t{} messages'.format(secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
+				print '{}\t{} seconds,\t{} events,\t{} messages'.format(datetime.now(), secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
@@ -283,5 +283,5 @@ class EventDetector():
 if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
-	detector = EventDetector(mysql_db, redis_db, BBOX, fast_forward_ratio=60)
+	detector = EventDetector(mysql_db, redis_db, BBOX, fast_forward_ratio=1)
 	detector.run()
