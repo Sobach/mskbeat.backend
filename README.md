@@ -17,13 +17,17 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ### [Unreleased]
 
+### [v1.0.1 Oxenaforda] - 2016-01-27
+
 #### Added:
 
 - settings_template.py with comments;
 
 - emulator.py - separate file for CollectorEmulator with commandline tools;
 
-- Bounds could be specified using .geojson file. And Collectors could filter points: do they exist inside bounds or not.
+- Bounds could be specified using .geojson file. And Collectors could filter points: do they exist inside bounds or not;
+
+- Event classifier (decision tree or ada boost) to determine real events;
 
 #### Changed:
 
@@ -63,7 +67,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - CALCULUS: [numpy](http://www.numpy.org/), [networkx](https://networkx.github.io/), [sklearn](http://scikit-learn.org/stable/), [scipy](http://www.scipy.org/), [shapely](http://toblerity.org/shapely/);
 
-- NLP: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/).
+- NLP: [pymorphy2](https://github.com/kmike/pymorphy2), [nltk](http://www.nltk.org/), [gensim](https://radimrehurek.com/gensim/).
 
 ## Files:
 
