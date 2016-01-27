@@ -14,6 +14,9 @@ from numpy import mean, std
 from scipy.stats import entropy
 from shapely.geometry import MultiPoint
 
+# DATABASE
+from MySQLdb import escape_string
+
 # NLTK
 from pymorphy2 import MorphAnalyzer
 from nltk.tokenize import TreebankWordTokenizer
@@ -56,9 +59,9 @@ class Event():
 		self.is_valid: method for classifier to determine, if event is actually event, and not a random messages contilation
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
-		self.backup: dump event to MySQL long-term storage, used for non-evaluating events
 		self.loads / self.dumps: serialize/deserialize event to/from string representation
 		self.load / self.dump: serialize/deserialize event and put/get it to Redis
+		self.backup / self.restore: dump/restore event to/from MySQL long-term storage
 		self.get_messages_data: get MySQL data for messages ids
 		self.get_media_data: get MySQL data for media using existing messages ids
 		self.event_summary_stats: calculate statistics and start/end time for event
@@ -78,7 +81,7 @@ class Event():
 		tokens (Set[str]): collection of stemmed tokens from raw text; created in add_stem_texts()
 		tstamp (datetime): 'created at' timestamp
 		user (int): user id, absolutely unique for one network, but matches between networks are possible
-		token_score (float): agreement estimation with average cluster text, based on Jaccard distance [0:2]
+		token_score (float): agreement estimation with average cluster text
 	"""
 
 	def __init__(self, mysql_con, redis_con, classifier = None, points = []):
@@ -190,16 +193,21 @@ class Event():
 	def backup(self):
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
-		Additionally, creates "dumped" key in Redis.
 		"""
-		q = u'''INSERT IGNORE INTO events(id, start, end) VALUES ("{}", "{}", "{}");'''.format(self.id, self.start, self.end)
-		exec_mysql(q, self.mysql)
-		q = '''INSERT IGNORE INTO event_msgs(msg_id, event_id) VALUES {};'''.format(','.join(['("{}","{}")'.format(x, self.id) for x in self.messages.keys()]))
+		q = u'''INSERT IGNORE INTO events(id, start, msgs, dumps) VALUES ("{}", "{}", {}, "{}");'''.format(self.id, self.start, len(self.messages.keys()), escape_string(self.dumps(compress=True)))
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
-		# Dump to Redis event to restore it in case
-		self.dump("dumped")
+	def restore(self, event_id):
+		"""
+		Method restores event from MySQL table using event_id parameter.
+
+		Args:
+			event_id (str): unique event identifier
+		"""
+		q = '''SELECT dumps FROM events WHERE id="{}"'''.format(event_id)
+		event_data = exec_mysql(q, self.mysql)[0][0]['dumps']
+		self.loads(event_data)
 
 	def load(self, event_id, redis_prefix='event'):
 		"""
@@ -229,22 +237,34 @@ class Event():
 			data (str): pickle dump of event-required parameters.
 		"""
 		event_data = ploads(data)
+		if 'compressed' not in event_data.keys() or not event_data['compressed']:
+			self.messages = event_data['messages']
+			self.media = event_data['media']
+		else:
+			self.messages = {k:{'is_core':v, 'id':k} for k,v in event_data['messages'].items()}
+			self.get_messages_data()
+			self.media = {}
+			self.get_media_data()
 		self.id = event_data['id']
 		self.created = event_data['created']
 		self.updated = event_data['updated']
-		self.messages = event_data['messages']
-		self.media = event_data['media']
 		if 'verification' in event_data.keys():
 			self.verification = event_data['verification']
 		if 'validation' in event_data.keys():
 			self.validation = event_data['validation']
 		self.event_update()
 
-	def dumps(self):
+	def dumps(self, compress=False):
 		"""
 		Method for serializing event to string.
 		"""
-		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'messages':self.messages, 'media':self.media, 'verification':self.verification, 'validation':self.validity}
+		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity}
+		if compress:
+			todump['compressed'] = True
+			todump['messages'] = {k:v['is_core'] for k,v in self.messages.items()}
+		else:
+			todump['messages'] = self.messages
+			todump['media'] = self.media
 		return pdumps(todump)
 
 	def get_messages_data(self, ids=None):
