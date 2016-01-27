@@ -332,7 +332,7 @@ class Event():
 			deviation_threshold (int): number of standart deviations, that differs core tokens from average tokens
 			min_token (int): minimal length of token, to exclude prepositions/conjunctions
 		"""
-		texts_by_authors = [set().union(*[msg['tokens'] for msg in list(y[1])]) for y in groupby(sorted(self.values(), key=lambda x:x['user']), lambda z:z['user'])]
+		texts_by_authors = [set().union(*[msg['tokens'] for msg in list(y[1])]) for y in groupby(sorted(self.messages.values(), key=lambda x:x['user']), lambda z:z['user'])]
 		top_words = {}
 		for doc in texts_by_authors:
 			for token in doc:
