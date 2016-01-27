@@ -194,7 +194,11 @@ class Event():
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
 		"""
-		q = u'''INSERT IGNORE INTO events(id, start, msgs, dumps) VALUES ("{}", "{}", {}, "{}");'''.format(self.id, self.start, len(self.messages.keys()), escape_string(self.dumps(compress=True)))
+		if self.verification is None:
+			v = 'NULL'
+		else:
+			v = int(self.verification)
+		q = u'''INSERT IGNORE INTO events(id, start, msgs, dumps, verification) VALUES ("{}", "{}", {}, "{}", {});'''.format(self.id, self.start, len(self.messages.keys()), escape_string(self.dumps(compress=True)), v)
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
@@ -320,21 +324,23 @@ class Event():
 				txt = sub(self.url_re, '', txt)
 				self.messages[i]['tokens'] = {self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))}
 
-	def create_core(self, deviation_threshold=2):
+	def create_core(self, deviation_threshold=2, min_token=3):
 		"""
 		Method creates core of imprtant words for event.
 
 		Args:
 			deviation_threshold (int): number of standart deviations, that differs core tokens from average tokens
+			min_token (int): minimal length of token, to exclude prepositions/conjunctions
 		"""
-		texts = [x['tokens'] for x in self.messages.values()]
+		texts_by_authors = [set().union(*[msg['tokens'] for msg in list(y[1])]) for y in groupby(sorted(e.messages.values(), key=lambda x:x['user']), lambda z:z['user'])]
 		top_words = {}
-		for doc in texts:
+		for doc in texts_by_authors:
 			for token in doc:
-				try:
-					top_words[token] += 1
-				except KeyError:
-					top_words[token] = 1
+				if len(token) >= min_token:
+					try:
+						top_words[token] += 1
+					except KeyError:
+						top_words[token] = 1
 		th_vals = [x[1] for x in top_words.items()]
 		threshold = mean(th_vals) + deviation_threshold * std(th_vals)
 		self.cores[deviation_threshold] = [k for k,v in top_words.items() if v > threshold]
