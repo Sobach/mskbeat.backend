@@ -161,7 +161,7 @@ class Event():
 		if not self.classifier:
 			self.classifier = build_event_classifier()
 		row = [len(self.messages.values()), len(self.media.values()), self.authors, self.most_active_author, self.authors_share, self.entropy, self.ppa, self.relevant_messages_share, self.duration]
-		self.validity = bool(self.classifier.predict(row)[0])
+		self.validity = bool(self.classifier.predict([row])[0])
 		return self.validity
 
 	def merge(self, other_event):
