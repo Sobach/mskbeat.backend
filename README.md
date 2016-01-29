@@ -17,7 +17,13 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ### [Unreleased]
 
-### [v1.0.1 Oxenaforda] - 2016-01-27
+#### TBD [Goals for future releases]:
+
+- Multi-document text summarisation tool for event.
+
+- New streams for collector: messages "success" level monitoring, engagement stats for selected posts.
+
+### [v1.0.1 event classifier] - 2016-01-27
 
 #### Added:
 
