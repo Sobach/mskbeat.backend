@@ -276,7 +276,10 @@ class EventDetector():
 		"""
 		for event in self.events.values():
 			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
-				event.backup()
+				if event.authors > 1 or len(event.messages.values()) >= 5:
+					event.backup()
+				else:
+					self.redis.delete("event:{}".format(event.id))
 			else:
 				event.dump()
 

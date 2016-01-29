@@ -16,6 +16,7 @@ from shapely.geometry import MultiPoint
 
 # DATABASE
 from MySQLdb import escape_string
+from redis import ResponseError
 
 # NLTK
 from pymorphy2 import MorphAnalyzer
@@ -195,10 +196,14 @@ class Event():
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
 		"""
 		if self.verification is None:
-			v = 'NULL'
+			ver = 'NULL'
 		else:
-			v = int(self.verification)
-		q = u'''INSERT IGNORE INTO events(id, start, msgs, dumps, verification) VALUES ("{}", "{}", {}, "{}", {});'''.format(self.id, self.start, len(self.messages.keys()), escape_string(self.dumps(compress=True)), v)
+			ver = int(self.verification)
+		if self.validity is None:
+			val = 'NULL'
+		else:
+			val = int(self.validity)
+		q = '''INSERT IGNORE INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {});'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(self.dumps(compress=True)), ver, val)
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
@@ -216,11 +221,15 @@ class Event():
 	def load(self, event_id, redis_prefix='event'):
 		"""
 		Method for deserializing and loading event from Redis database.
+
 		Args:
 			event_id (str): unique event isentifier
 			redis_prefix (str): prefix used in Redis database
 		"""
-		event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
+		try:
+			event_data = self.redis.hget('{}:{}'.format(redis_prefix, event_id), 'dumps')
+		except ResponseError:
+			event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
 		self.loads(event_data)
 
 	def dump(self, redis_prefix='event'):
@@ -231,7 +240,16 @@ class Event():
 			redis_prefix (str): prefix to use, when storing new key in Redis database
 		"""
 		data = self.dumps()
-		self.redis.set("{}:{}".format(redis_prefix, self.id), data)
+		if self.verification is None:
+			ver = 'NULL'
+		else:
+			ver = int(self.verification)
+		if self.validity is None:
+			val = 'NULL'
+		else:
+			val = int(self.validity)
+		event = {'start':self.start.strftime("%Y-%m-%d %H:%M:%S"), 'end':self.end.strftime("%Y-%m-%d %H:%M:%S"), 'msgs':len(self.messages.keys()), 'description':', '.join([x.encode('utf-8') for x in self.cores[2]]), 'dumps':data, 'verification':ver, 'validity':val}
+		self.redis.hmset("{}:{}".format(redis_prefix, self.id), event)
 
 	def loads(self, data):
 		"""
@@ -256,13 +274,15 @@ class Event():
 			self.verification = event_data['verification']
 		if 'validation' in event_data.keys():
 			self.validation = event_data['validation']
+		if 'cores' in event_data.keys():
+			self.cores = event_data['cores']
 		self.event_update()
 
 	def dumps(self, compress=False):
 		"""
 		Method for serializing event to string.
 		"""
-		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity}
+		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity, 'cores':self.cores}
 		if compress:
 			todump['compressed'] = True
 			todump['messages'] = {k:v['is_core'] for k,v in self.messages.items()}
