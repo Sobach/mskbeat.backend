@@ -219,7 +219,7 @@ class Event():
 			val = 'NULL'
 		else:
 			val = int(self.validity)
-		q = '''INSERT IGNORE INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {});'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(self.dumps(compress=True)), ver, val)
+		q = '''INSERT IGNORE INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {}) ON DUPLICATE KEY UPDATE `start`=VALUES(`start`), `end`=VALUES(`end`), `msgs`=VALUES(`msgs`), `description`=VALUES(`description`), `dumps`=VALUES(`dumps`), `verification`=VALUES(`verification`), `validity`=VALUES(`validity`);'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(self.dumps(compress=True)), ver, val)
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
@@ -275,11 +275,12 @@ class Event():
 			data (str): pickle dump of event-required parameters.
 		"""
 		event_data = ploads(data)
+		self.messages = event_data['messages']
 		if 'compressed' not in event_data.keys() or not event_data['compressed']:
-			self.messages = event_data['messages']
 			self.media = event_data['media']
 		else:
-			self.messages = {k:{'is_core':v, 'id':k} for k,v in event_data['messages'].items()}
+			for k, v in self.messages.items():
+				v.update({'id':k})
 			self.get_messages_data()
 			self.media = {}
 			self.get_media_data()
@@ -301,8 +302,9 @@ class Event():
 		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity, 'cores':self.cores}
 		if compress:
 			todump['compressed'] = True
-			todump['messages'] = {k:v['is_core'] for k,v in self.messages.items()}
+			todump['messages'] = {k:{'is_core':v['is_core'], 'token_score':v['token_score']} for k,v in self.messages.items()}
 		else:
+			todump['compressed'] = False
 			todump['messages'] = self.messages
 			todump['media'] = self.media
 		return pdumps(todump)
