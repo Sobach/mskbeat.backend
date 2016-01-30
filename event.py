@@ -58,6 +58,7 @@ class Event():
 		self.event_update: commands to calculate all data on event, based on messages and media
 		self.is_successor: examines, if current event have common messages with specified event slice
 		self.is_valid: method for classifier to determine, if event is actually event, and not a random messages contilation
+		self.classifier_row: unififed method for creating classifier data-row
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
 		self.loads / self.dumps: serialize/deserialize event to/from string representation
@@ -159,11 +160,26 @@ class Event():
 		"""
 		if self.validity:
 			return True
-		if not self.classifier:
-			self.classifier = build_event_classifier()
-		row = [len(self.messages.values()), len(self.media.values()), self.authors, self.most_active_author, self.authors_share, self.entropy, self.ppa, self.relevant_messages_share, self.duration]
-		self.validity = bool(self.classifier.predict([row])[0])
+		if self.classifier:
+			self.validity = bool(self.classifier.predict([self.classifier_row()])[0])
 		return self.validity
+
+	def classifier_row(self):
+		"""
+		Unififed method for creating classifier data-row. Every var, used in prediction, is listed here, and only here.
+		"""
+		row = [
+			len(self.messages.values()), 
+			len(self.media.values()), 
+			self.authors, 
+			self.most_active_author, 
+			self.authors_share, 
+			self.entropy, 
+			self.ppa, 
+			self.relevant_messages_share, 
+			self.duration
+		]
+		return row
 
 	def merge(self, other_event):
 		"""
