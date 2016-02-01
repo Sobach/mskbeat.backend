@@ -84,7 +84,8 @@ class EventDetector():
 				self.merge_slices_to_events(slice_clusters)
 				row.append((datetime.now() - start).total_seconds())
 
-				start = datetime.now()self.dump_current_events()
+				start = datetime.now()
+				self.dump_current_events()
 				row.append((datetime.now() - start).total_seconds())
 
 				f = open('timelogfile.csv', 'a')
