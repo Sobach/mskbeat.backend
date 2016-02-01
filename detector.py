@@ -59,17 +59,40 @@ class EventDetector():
 		Interrupts if self.interrupter is set to True.
 		"""
 		while True:
+			row = []
+			start = datetime.now()
 			self.build_current_trees()
+			row.append((datetime.now() - start).total_seconds())
 			if self.current_datapoints:
 				start = datetime.now()
 				self.build_reference_trees(take_origins = False)
+				row.append((datetime.now() - start).total_seconds())
+
+				start = datetime.now()
 				points = self.get_current_outliers()
+				row.append((datetime.now() - start).total_seconds())
+
+				start = datetime.now()
 				slice_clusters = self.dbscan_tweets(points)
+				row.append((datetime.now() - start).total_seconds())
+
+				start = datetime.now()
 				self.get_previous_events()
+				row.append((datetime.now() - start).total_seconds())
+
+				start = datetime.now()
 				self.merge_slices_to_events(slice_clusters)
-				self.dump_current_events()
-				secs = (datetime.now() - start).total_seconds()
-				print '{}\t{} seconds,\t{} events,\t{} messages'.format(datetime.now(), secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
+				row.append((datetime.now() - start).total_seconds())
+
+				start = datetime.now()self.dump_current_events()
+				row.append((datetime.now() - start).total_seconds())
+
+				f = open('timelogfile.csv', 'a')
+				f.write('\t'.join(row))
+				f.close()
+
+				#secs = (datetime.now() - start).total_seconds()
+				#print '{}\t{} seconds,\t{} events,\t{} messages'.format(datetime.now(), secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
