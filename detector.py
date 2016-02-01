@@ -89,7 +89,7 @@ class EventDetector():
 				row.append((datetime.now() - start).total_seconds())
 
 				f = open('timelogfile.csv', 'a')
-				f.write('\t'.join(row))
+				f.write('\t'.join([str(x) for x in row]))
 				f.close()
 
 				#secs = (datetime.now() - start).total_seconds()
