@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from itertools import groupby, chain
 from pickle import loads as ploads
 
+from psutil import cpu_percent
+
 # DATABASE
 from redis import StrictRedis
 
@@ -63,33 +65,40 @@ class EventDetector():
 			start = datetime.now()
 			self.build_current_trees()
 			row.append((datetime.now() - start).total_seconds())
+			row.append(cpu_percent())
 			if self.current_datapoints:
 				start = datetime.now()
 				self.build_reference_trees(take_origins = False)
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				start = datetime.now()
 				points = self.get_current_outliers()
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				start = datetime.now()
 				slice_clusters = self.dbscan_tweets(points)
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				start = datetime.now()
 				self.get_previous_events()
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				start = datetime.now()
 				self.merge_slices_to_events(slice_clusters)
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				start = datetime.now()
 				self.dump_current_events()
 				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
 
 				f = open('timelogfile.csv', 'a')
-				f.write('\t'.join([str(x) for x in row])+'\n')
+				f.write(','.join([str(x) for x in row])+'\n')
 				f.close()
 
 				#secs = (datetime.now() - start).total_seconds()
@@ -110,7 +119,7 @@ class EventDetector():
 		dlon = lon2 - lon1 
 		dlat = lat2 - lat1
 		a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-		c = 2 * asin(sqrt(a)) 
+		c = 2 * asin(sqrt(a))
 		km = c * 6371
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
