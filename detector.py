@@ -216,7 +216,8 @@ class EventDetector():
 				message['network'] = int(message['network'])
 				maxtime.append(int(message['tstamp']))
 				try:
-					data[message['network']].append(message)
+					data[message['network']]['array'].append([message['lng'], message['lat']])
+					data[message['network']]['ids'].append(message['id'])
 				except KeyError:
 					data[message['network']] = {'array':[[message['lng'], message['lat']]], 'ids':[message['id']]}
 		self.current_datapoints = data
