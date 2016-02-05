@@ -13,7 +13,7 @@ from psutil import cpu_percent
 from redis import StrictRedis
 
 # MATH
-from numpy import array, mean, std, absolute, seterr
+from numpy import array, mean, std, absolute, seterr, float32, concatenate
 from networkx import Graph, connected_components
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
@@ -54,6 +54,7 @@ class EventDetector():
 		self.ffr = fast_forward_ratio
 		self.classifier = build_event_classifier()
 		self.events = {}
+		self.events_loaded = datetime.now()
 
 	def run(self):
 		"""
@@ -73,12 +74,17 @@ class EventDetector():
 				row.append(cpu_percent())
 
 				start = datetime.now()
-				points = self.get_current_outliers()
+				self.current_datapoints_prefilter()
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
 
 				start = datetime.now()
-				slice_clusters = self.dbscan_tweets(points)
+				self.get_current_outliers()
+				row.append((datetime.now() - start).total_seconds())
+				row.append(cpu_percent())
+
+				start = datetime.now()
+				slice_clusters = self.dbscan_tweets()
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
 
@@ -137,8 +143,7 @@ class EventDetector():
 		Result:
 			self.trees (List[KDTree])
 		"""
-		time = max([item['tstamp'] for sublist in self.current_datapoints.values() for item in sublist])
-		self.reference_data = self.get_reference_data(time, days, take_origins)
+		self.reference_data = self.get_reference_data(self.reference_time, days, take_origins)
 		networks = [1,2,3]
 		preproc = {net:{} for net in networks}
 		for item in self.reference_data:
@@ -194,23 +199,47 @@ class EventDetector():
 		So at every time only currently active tweets are selected.
 		"""
 		data = {}
+		maxtime = []
 		for key in self.redis.keys("message:*"):
 			try:
-				message = ploads(self.redis.get(key))
+				message = self.redis.hgetall(key))
 			except TypeError:
 				pass
 			else:
-				if message['id'] == 0 and message['text'] == 'TheEnd':
+				if message['id'] == '0':
 					self.interrupter = True
+				message['lat'] = float(message['lat'])
+				message['lng'] = float(message['lng'])
+				message['network'] = int(message['network'])
+				maxtime.append(int(message['tstamp']))
 				try:
 					data[message['network']].append(message)
 				except KeyError:
-					data[message['network']] = [message]
+					data[message['network']] = {'array':[[message['lng'], message['lat']]], 'ids':[message['id']]}
 		self.current_datapoints = data
 		if data:
 			self.current_trees = {}
 			for net in data.keys():
-				self.current_trees[net] = KDTree(array([[x['lng'], x['lat']] for x in data[net]]))
+				self.current_datapoints[net]['array'] = array(self.current_datapoints[net]['array'], dtype=float32)
+				self.current_datapoints[net]['ids'] = array(self.current_datapoints[net]['ids'])
+				self.current_trees[net] = KDTree(self.current_datapoints[net]['array'])
+		self.reference_time = datetime.fromtimestamp(max(maxtime))
+
+	def current_datapoints_prefilter(self, neighbour_points = 5):
+		"""
+		Filter from current datapoints, those do not have enough neighbour points in the 2*max_dist radius (in meters)
+
+		Args:
+			neighbour_points (int)
+		"""
+		nets = self.current_datapoints.keys()
+		ids = concatenate([in self.current_datapoints[x]['ids'] for x in nets])
+		coords = concatenate([in self.current_datapoints[x]['array'] for x in nets])
+		megatree = KDTree(coords)
+		for net in nets:
+			neighbours_number = megatree.query_radius(self.current_datapoints[net]['array'], r=self.eps*2, count_only=True)
+			self.current_datapoints[net]['array'] = self.current_datapoints[net]['array'][neighbours_number >= neighbour_points]
+			self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][neighbours_number >= neighbour_points]
 
 	def get_current_outliers(self, neighbour_points = 5):
 		"""
@@ -225,30 +254,39 @@ class EventDetector():
 		points = []
 		if self.current_datapoints:
 			for net in self.current_datapoints.keys():
-				if len(self.current_datapoints[net]) < neighbour_points:
+				if len(self.current_datapoints[net]['array']) < neighbour_points:
 					continue
-				cur_knn_data = mean(self.current_trees[net].query(array([[x['lng'], x['lat']] for x in self.current_datapoints[net]]), k=5, return_distance=True)[0], axis=1)
-				ref_knn_data = mean(array([x.query(array([[x['lng'], x['lat']] for x in self.current_datapoints[net]]), k=5, return_distance=True)[0] for x in self.reference_trees[net]]), axis=2)
+				cur_knn_data = mean(self.current_trees[net].query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0], axis=1)
+				ref_knn_data = mean(array([x.query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0] for x in self.reference_trees[net]]), axis=2)
 				thr_knn_mean = mean(ref_knn_data, axis=0)
 				thr_knn_std = std(ref_knn_data, axis=0)
 				thr_knn_data =  thr_knn_mean - thr_knn_std  * 3
-				new_points = list(array(self.current_datapoints[net])[cur_knn_data < thr_knn_data])
-				weights = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
-				for i in range(len(weights)):
-					new_points[i]['weight'] = weights[i]
-				points += new_points
-		return points
+				self.current_datapoints[net]['array'] = self.current_datapoints[net]['array'][cur_knn_data < thr_knn_data]
+				self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][cur_knn_data < thr_knn_data]
+				self.current_datapoints[net]['weights'] = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
 
-	def dbscan_tweets(self, points):
+	def dbscan_tweets(self):
 		"""
 		Method clusters points-outliers into slice-clusters using DBSCAN.
 		Returns dict of slice-clusters - base for event-candidates.
 		"""
-		if points:
+		ids = concatenate([in self.current_datapoints[x]['ids'] for x in nets])
+		coords = concatenate([in self.current_datapoints[x]['array'] for x in nets])
+		weights = concatenate([in self.current_datapoints[x]['weights'] for x in nets])
+		if len(ids) > 0:
 			clustering = DBSCAN(eps=self.eps, min_samples=5)
-			labels = clustering.fit_predict(array([[x['lng'], x['lat']] for x in points]))
-			ret_tab = [dict(points[i].items() + {'cluster':labels[i], 'is_core': i in clustering.core_sample_indices_}.items()) for i in range(len(labels)) if labels[i] > -1]
-			ret_tab = { x[0]:tuple(x[1]) for x in groupby(sorted(ret_tab, key=lambda x:x['cluster']), lambda x: x['cluster']) }
+			labels = clustering.fit_predict(coords)
+			core_ids = ids[clustering.core_sample_indices_]
+			ids = ids[labels > -1]
+			coords = coords[labels > -1]
+			weights = weights[labels > -1]
+			labels = labels[labels > -1]
+			ret_tab = {}
+			for i in range(len(labels)):
+				try:
+					ret_tab[labels[i]].append({'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'cluster':labels[i], 'is_core':ids[i] in core_ids})
+				except KeyError:
+					ret_tab[labels[i]] = [{'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'cluster':labels[i], 'is_core':ids[i] in core_ids}]
 			return ret_tab
 		else:
 			return {}
@@ -259,6 +297,7 @@ class EventDetector():
 		to have data to merge with currently created slice-clusters
 		"""
 		self.events = {}
+		self.events_loaded = datetime.now()
 		for key in self.redis.keys("event:*"):
 			event = Event(self.mysql, self.redis, self.classifier)
 			event.load(key[6:])
@@ -285,11 +324,12 @@ class EventDetector():
 		for cluster in [x for x in connected_components(G) if x.intersection(slices_ids)]:
 			unify_slices = cluster.intersection(slices_ids)
 			unify_events = list(cluster.intersection(events_ids))
-			meta_slice = [x for x in (msg for cl in [current_slices[i] for i in unify_slices] for msg in cl)]
-			chain([current_slices[x] for x in unify_slices])
+			meta_slice = [msg for i in unify_slices for msg in current_slices[i]]
 			if not unify_events:
 				new_event = Event(self.mysql, self.redis, self.classifier, meta_slice)
 				self.events[new_event.id] = new_event
+			elif len(unify_events) == 1 and len(unify_slices) == 1 and set(self.events[unify_events[0]].messages.keys()) == {x['id'] for x in meta_slice}:
+				continue
 			else:
 				if len(unify_events) > 1:
 					for ancestor in unify_events[1:]:
@@ -313,7 +353,7 @@ class EventDetector():
 					event.backup()
 				else:
 					self.redis.delete("event:{}".format(event.id))
-			else:
+			elif event.updated > self.events_loaded:
 				event.dump()
 
 if __name__ == '__main__':
