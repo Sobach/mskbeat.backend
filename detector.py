@@ -360,8 +360,8 @@ class EventDetector():
 				else:
 					self.redis.delete("event:{}".format(eid))
 				del self.events[eid]
-			elif event.updated > self.loop_start:
-				event.dump()
+			elif self.events[eid].updated > self.loop_start:
+				self.events[eid].dump()
 
 if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
