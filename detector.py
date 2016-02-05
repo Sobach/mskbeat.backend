@@ -236,8 +236,8 @@ class EventDetector():
 			neighbour_points (int)
 		"""
 		nets = self.current_datapoints.keys()
-		ids = concatenate([in self.current_datapoints[x]['ids'] for x in nets])
-		coords = concatenate([in self.current_datapoints[x]['array'] for x in nets])
+		ids = concatenate([self.current_datapoints[x]['ids'] for x in nets])
+		coords = concatenate([self.current_datapoints[x]['array'] for x in nets])
 		megatree = KDTree(coords)
 		for net in nets:
 			neighbours_number = megatree.query_radius(self.current_datapoints[net]['array'], r=self.eps*2, count_only=True)
@@ -274,9 +274,9 @@ class EventDetector():
 		Returns dict of slice-clusters - base for event-candidates.
 		"""
 		nets = self.current_datapoints.keys()
-		ids = concatenate([in self.current_datapoints[x]['ids'] for x in nets])
-		coords = concatenate([in self.current_datapoints[x]['array'] for x in nets])
-		weights = concatenate([in self.current_datapoints[x]['weights'] for x in nets])
+		ids = concatenate([self.current_datapoints[x]['ids'] for x in nets])
+		coords = concatenate([self.current_datapoints[x]['array'] for x in nets])
+		weights = concatenate([self.current_datapoints[x]['weights'] for x in nets])
 		if len(ids) > 0:
 			clustering = DBSCAN(eps=self.eps, min_samples=5)
 			labels = clustering.fit_predict(coords)
