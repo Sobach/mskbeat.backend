@@ -6,6 +6,7 @@
 from datetime import datetime, timedelta
 from itertools import groupby, chain
 from pickle import loads as ploads
+from time import sleep
 
 from psutil import cpu_percent
 
@@ -49,12 +50,13 @@ class EventDetector():
 		self.bbox = bbox
 		self.mysql = mysql_con
 		self.redis = redis_con
-		self.calcualte_eps_dbscan()
+
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
+
+		self.calcualte_eps_dbscan()
 		self.classifier = build_event_classifier()
-		self.events = {}
-		self.events_loaded = datetime.now()
+		self.get_dumped_events()
 
 	def run(self):
 		"""
@@ -62,6 +64,7 @@ class EventDetector():
 		Interrupts if self.interrupter is set to True.
 		"""
 		while True:
+			self.loop_start = datetime.now()
 			row = []
 			start = datetime.now()
 			self.build_current_trees()
@@ -92,11 +95,6 @@ class EventDetector():
 				row.append(cpu_percent())
 
 				start = datetime.now()
-				self.get_previous_events()
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-
-				start = datetime.now()
 				self.merge_slices_to_events(slice_clusters)
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
@@ -116,6 +114,11 @@ class EventDetector():
 					for event in self.events.values():
 						event.backup()
 					break
+
+				# cpu usage slower: one iteration per 2 minutes
+				pause = 60*2 - (datetime.now() - self.loop_start).total_seconds()
+				if pause > 0:
+					sleep(pause)
 
 	def calcualte_eps_dbscan(self, max_dist = 0.2):
 		"""
@@ -295,13 +298,12 @@ class EventDetector():
 		else:
 			return {}
 
-	def get_previous_events(self):
+	def get_dumped_events(self):
 		"""
 		Loading previously saved events from Redis database - 
 		to have data to merge with currently created slice-clusters
 		"""
 		self.events = {}
-		self.events_loaded = datetime.now()
 		for key in self.redis.keys("event:*"):
 			event = Event(self.mysql, self.redis, self.classifier)
 			event.load(key[6:])
@@ -351,13 +353,14 @@ class EventDetector():
 		for TIME_SLIDING_WINDOW/fast_forward_ratio time.
 
 		"""
-		for event in self.events.values():
-			if (datetime.now() - event.updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
-				if event.authors > 1 or len(event.messages.values()) >= 5:
-					event.backup()
+		for eid in self.events.keys():
+			if (datetime.now() - self.events[eid].updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
+				if self.events[eid].authors > 1 or len(self.events[eid].messages.values()) >= 5:
+					self.events[eid].backup()
 				else:
-					self.redis.delete("event:{}".format(event.id))
-			elif event.updated > self.events_loaded:
+					self.redis.delete("event:{}".format(eid))
+				del self.events[eid]
+			elif event.updated > self.loop_start:
 				event.dump()
 
 if __name__ == '__main__':
