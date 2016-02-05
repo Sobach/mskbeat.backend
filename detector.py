@@ -206,7 +206,7 @@ class EventDetector():
 		for key in self.redis.keys("message:*"):
 			message = self.redis.hgetall(key)
 			if not message:
-				pass
+				continue
 			else:
 				if message['id'] == '0':
 					self.interrupter = True

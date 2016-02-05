@@ -4,7 +4,7 @@
 
 # SYSTEM
 from datetime import datetime, timedelta
-from pickle import dumps as pdumps
+from time import mktime
 from sys import stdout
 
 # DATABASE
@@ -96,8 +96,8 @@ class CollectorEmulator():
 					msg = self.raw_data.pop(0)
 					self.push_msg(msg)
 			except IndexError:
-				message = {'id':0, 'text':'TheEnd', 'lat':0, 'lng':0, 'tstamp':datetime.now(), 'user':0, 'network':'u', 'iscopy':0}
-				self.redis.set("message:0", pdumps(message))
+				message = {'id':0, 'lat':0, 'lng':0, 'tstamp':datetime.now(), 'network':0}
+				self.redis.hmset("message:{}".format(message['id']), message)
 				break
 
 	def push_msg(self, message):
@@ -107,7 +107,14 @@ class CollectorEmulator():
 		(1) being sent to redis with lifetime for 1 hour (from settings - TIME_SLIDING_WINDOW)
 		(2) being dumped in MySQL datatable
 		"""
-		self.redis.set("message:{}".format(message['id']), pdumps(message))
+		redis_message = {
+			'id':message['id'], 
+			'lat':message['lat'], 
+			'lng': message['lng'], 
+			'tstamp': int(mktime(message['tstamp'].timetuple())), 
+			'network': message['network']
+		}
+		self.redis.hmset("message:{}".format(message['id']), redis_message)
 		self.redis.expire("message:{}".format(message['id']), int(TIME_SLIDING_WINDOW/self.fast_forward_ratio))
 		message['text'] = escape_string(message['text'])
 		q = 'INSERT IGNORE INTO tweets(id, text, lat, lng, tstamp, user, network, iscopy) VALUES ("{id}", "{text}", {lat}, {lng}, "{tstamp}", {user}, "{network}", {iscopy});'.format(**message)
