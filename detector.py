@@ -205,7 +205,7 @@ class EventDetector():
 		maxtime = []
 		for key in self.redis.keys("message:*"):
 			try:
-				message = self.redis.hgetall(key))
+				message = self.redis.hgetall(key)
 			except TypeError:
 				pass
 			else:
