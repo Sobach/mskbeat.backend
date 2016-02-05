@@ -26,7 +26,7 @@ from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
 from utilities import get_mysql_con, exec_mysql, build_event_classifier
 from event import Event
 
-seterr(divide='ignore', invalid='ignore')
+seterr(all='ignore')
 
 class EventDetector():
 	"""

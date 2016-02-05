@@ -84,6 +84,7 @@ class Event():
 		tstamp (datetime): 'created at' timestamp
 		user (int): user id, absolutely unique for one network, but matches between networks are possible
 		token_score (float): agreement estimation with average cluster text
+		weight (float): standart deviations below average
 	"""
 
 	def __init__(self, mysql_con, redis_con, classifier = None, points = []):
