@@ -72,16 +72,19 @@ class EventDetector():
 				self.build_reference_trees(take_origins = False)
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
+				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
 
 				start = datetime.now()
 				self.current_datapoints_prefilter()
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
+				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
 
 				start = datetime.now()
 				self.get_current_outliers()
 				row.append((datetime.now() - start).total_seconds())
 				row.append(cpu_percent())
+				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
 
 				start = datetime.now()
 				slice_clusters = self.dbscan_tweets()
@@ -270,6 +273,7 @@ class EventDetector():
 		Method clusters points-outliers into slice-clusters using DBSCAN.
 		Returns dict of slice-clusters - base for event-candidates.
 		"""
+		nets = self.current_datapoints.keys()
 		ids = concatenate([in self.current_datapoints[x]['ids'] for x in nets])
 		coords = concatenate([in self.current_datapoints[x]['array'] for x in nets])
 		weights = concatenate([in self.current_datapoints[x]['weights'] for x in nets])
