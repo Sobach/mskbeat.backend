@@ -204,18 +204,12 @@ class EventDetector():
 		data = {}
 		maxtime = []
 		for key in self.redis.keys("message:*"):
-			try:
-				message = self.redis.hgetall(key)
-			except TypeError:
+			message = self.redis.hgetall(key)
+			if not message:
 				pass
 			else:
-				try:
-					if message['id'] == '0':
-						self.interrupter = True
-				except KeyError:
-					print message, key, self.redis.get(key)
-					raise TypeError
-
+				if message['id'] == '0':
+					self.interrupter = True
 				message['lat'] = float(message['lat'])
 				message['lng'] = float(message['lng'])
 				message['network'] = int(message['network'])
