@@ -209,8 +209,13 @@ class EventDetector():
 			except TypeError:
 				pass
 			else:
-				if message['id'] == '0':
-					self.interrupter = True
+				try:
+					if message['id'] == '0':
+						self.interrupter = True
+				except KeyError:
+					print message
+					raise TypeError
+
 				message['lat'] = float(message['lat'])
 				message['lng'] = float(message['lng'])
 				message['network'] = int(message['network'])
