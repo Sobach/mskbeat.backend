@@ -213,7 +213,7 @@ class EventDetector():
 					if message['id'] == '0':
 						self.interrupter = True
 				except KeyError:
-					print message
+					print message, key, self.redis.get(key)
 					raise TypeError
 
 				message['lat'] = float(message['lat'])
