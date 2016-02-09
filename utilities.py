@@ -170,5 +170,9 @@ def migrate_event_dumps():
 	classifier = build_event_classifier(classifier_type="tree", balanced=False)
 	for event in exec_mysql('SELECT id FROM events;', mysql)[0]:
 		e = Event(mysql, redis, classifier)
-		e.restore(event['id'], new_serializer=False)
-		e.backup()
+		try:
+			e.restore(event['id'], new_serializer=False)
+		except:
+			continue
+		else:
+			e.backup()
