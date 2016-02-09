@@ -122,7 +122,7 @@ def create_mysql_tables():
 	tabs = [
 		"""CREATE TABLE `tweets` (`id` varchar(40) NOT NULL DEFAULT '', `text` text, `lat` float DEFAULT NULL, `lng` float DEFAULT NULL, `tstamp` datetime DEFAULT NULL, `user` bigint(40) DEFAULT NULL, `network` tinyint(4) DEFAULT NULL, `iscopy` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`), KEY `net` (`network`), KEY `latitude` (`lat`), KEY `longitude` (`lng`), KEY `time` (`tstamp`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `media` (`id` int(11) unsigned NOT NULL AUTO_INCREMENT, `tweet_id` varchar(40) DEFAULT NULL, `url` varchar(250) DEFAULT NULL, PRIMARY KEY (`id`), KEY `tweet_id` (`tweet_id`)) ENGINE=InnoDB AUTO_INCREMENT=2128971 DEFAULT CHARSET=utf8mb4;""",
-		"""CREATE TABLE `events` (`id` varchar(40) CHARACTER SET utf8mb4 NOT NULL DEFAULT '', `start` datetime DEFAULT NULL, `end` datetime DEFAULT NULL, `msgs` int(11) DEFAULT NULL, `description` text, `dumps` longtext, `verification` tinyint(1) DEFAULT NULL, `validity` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+		"""CREATE TABLE `events` (`id` varchar(40) CHARACTER SET utf8mb4 NOT NULL DEFAULT '', `start` datetime DEFAULT NULL, `end` datetime DEFAULT NULL, `msgs` int(11) DEFAULT NULL, `description` text, `dumps` longblob, `verification` tinyint(1) DEFAULT NULL, `validity` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `event_msgs` (`id` int(11) NOT NULL AUTO_INCREMENT, `msg_id` varchar(40) DEFAULT NULL, `event_id` varchar(40) DEFAULT NULL, PRIMARY KEY (`id`), UNIQUE KEY `msg_id` (`msg_id`,`event_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `event_trainer` (`id` int(11) unsigned NOT NULL AUTO_INCREMENT, `tstamp` datetime DEFAULT NULL, `msg_num` int(11) DEFAULT NULL, `media_num` int(11) DEFAULT NULL, `users_num` int(11) DEFAULT NULL, `top_user_share` float DEFAULT NULL, `users_share` float DEFAULT NULL, `users_entropy` float DEFAULT NULL, `posts_per_user` float DEFAULT NULL, `relevant_msg_share` float DEFAULT NULL, `duration` int(11) DEFAULT NULL, `verification` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`) ENGINE=InnoDB AUTO_INCREMENT=1129 DEFAULT CHARSET=utf8mb4;""",
 	]
@@ -160,3 +160,15 @@ def build_event_classifier(classifier_type="tree", balanced=False, classifier_pa
 		result.append(e['verification'])
 	classifier.fit(data, result)
 	return classifier
+
+def migrate_event_dumps():
+	from redis import StrictRedis
+	from settings import REDIS_HOST, REDIS_PORT, REDIS_DB
+	from event import Event
+	mysql = get_mysql_con()
+	redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+	classifier = build_event_classifier(classifier_type="tree", balanced=False)
+	for event in exec_mysql('SELECT id FROM events;', mysql)[0]:
+		e = Event(mysql, redis, classifier)
+		e.restore(event['id'], new_serializer=False)
+		e.backup()

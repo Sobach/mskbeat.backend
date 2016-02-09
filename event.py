@@ -4,6 +4,7 @@
 
 # SYSTEM
 from datetime import datetime
+from time import mktime
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
 from pickle import loads as ploads, dumps as pdumps
@@ -24,6 +25,9 @@ from nltk.tokenize import TreebankWordTokenizer
 from gensim.corpora import Dictionary
 from gensim.models import TfidfModel
 from gensim.similarities import MatrixSimilarity
+
+# SERIALIZING
+from msgpack import packb, unpackb
 
 # SELF IMPORT
 from utilities import exec_mysql, build_event_classifier
@@ -208,9 +212,12 @@ class Event():
 		self.event_update()
 		self.updated = datetime.now()
 
-	def backup(self):
+	def backup(self, new_serializer=True):
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
+
+		Args:
+			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		if self.verification is None:
 			ver = 'NULL'
@@ -220,43 +227,55 @@ class Event():
 			val = 'NULL'
 		else:
 			val = int(self.validity)
-		q = '''INSERT IGNORE INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {}) ON DUPLICATE KEY UPDATE `start`=VALUES(`start`), `end`=VALUES(`end`), `msgs`=VALUES(`msgs`), `description`=VALUES(`description`), `dumps`=VALUES(`dumps`), `verification`=VALUES(`verification`), `validity`=VALUES(`validity`);'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(self.dumps(compress=True)), ver, val)
+		if new_serializer:
+			msg_string = self.pack()
+		else:
+			msg_string = self.dumps(compress=True)
+		q = b'''INSERT INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {}) ON DUPLICATE KEY UPDATE `start`=VALUES(`start`), `end`=VALUES(`end`), `msgs`=VALUES(`msgs`), `description`=VALUES(`description`), `dumps`=VALUES(`dumps`), `verification`=VALUES(`verification`), `validity`=VALUES(`validity`);'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(msg_string), ver, val)
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
-	def restore(self, event_id):
+	def restore(self, event_id, new_serializer=True):
 		"""
 		Method restores event from MySQL table using event_id parameter.
 
 		Args:
 			event_id (str): unique event identifier
+			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		q = '''SELECT dumps FROM events WHERE id="{}"'''.format(event_id)
 		event_data = exec_mysql(q, self.mysql)[0][0]['dumps']
-		self.loads(event_data)
+		if new_serializer:
+			self.unpack(event_data)
+		else:
+			self.loads(event_data)
 
-	def load(self, event_id, redis_prefix='event'):
+	def load(self, event_id, redis_prefix='event', new_serializer=True):
 		"""
 		Method for deserializing and loading event from Redis database.
 
 		Args:
 			event_id (str): unique event isentifier
 			redis_prefix (str): prefix used in Redis database
+			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		try:
 			event_data = self.redis.hget('{}:{}'.format(redis_prefix, event_id), 'dumps')
 		except ResponseError:
 			event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
-		self.loads(event_data)
+		if new_serializer:
+			self.unpack(event_data)
+		else:
+			self.loads(event_data)
 
-	def dump(self, redis_prefix='event'):
+	def dump(self, redis_prefix='event', new_serializer=True):
 		"""
 		Method for serializing and dumping event to Redis database.
 
 		Args:
 			redis_prefix (str): prefix to use, when storing new key in Redis database
+			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
-		data = self.dumps()
 		if self.verification is None:
 			ver = 'NULL'
 		else:
@@ -265,12 +284,47 @@ class Event():
 			val = 'NULL'
 		else:
 			val = int(self.validity)
-		event = {'start':self.start.strftime("%Y-%m-%d %H:%M:%S"), 'end':self.end.strftime("%Y-%m-%d %H:%M:%S"), 'msgs':len(self.messages.keys()), 'description':', '.join([x.encode('utf-8') for x in self.cores[2]]), 'dumps':data, 'verification':ver, 'validity':val}
+		if new_serializer:
+			msg_string = self.pack()
+		else:
+			msg_string = self.dumps()
+		event = {'start':self.start.strftime("%Y-%m-%d %H:%M:%S"), 'end':self.end.strftime("%Y-%m-%d %H:%M:%S"), 'msgs':len(self.messages.keys()), 'description':', '.join([x.encode('utf-8') for x in self.cores[2]]), 'dumps':msg_string, 'verification':ver, 'validity':val}
 		self.redis.hmset("{}:{}".format(redis_prefix, self.id), event)
+
+	def pack(self):
+		"""
+		Method for serializing event to string.
+		"""
+		todump = {
+			'id':self.id,
+			'created':int(mktime(self.created.timetuple())),
+			'updated':int(mktime(self.updated.timetuple())),
+			'verification':self.verification,
+			'messages':[{'id':x['id'], 'is_core':x.get('is_core'), 'token_score':x.get('token_score'), 'weight':x.get('weight')} for x in self.messages.values()]
+		}
+		return packb(todump)
+
+	def unpack(self, data):
+		"""
+		Method for deserializing event from string. msgpack lib is used (considered to be faster than pickle).
+
+		Args:
+			data (str): pickle dump of event-required parameters.
+		"""
+		data = unpackb(data)
+		self.id = data['id']
+		self.created = datetime.fromtimestamp(data['created'])
+		self.updated = datetime.fromtimestamp(data['updated'])
+		self.verification = data['verification']
+		self.messages = {x['id']:x for x in data['messages']}
+		self.get_messages_data()
+		self.media = {}
+		self.get_media_data()
+		self.event_update()
 
 	def loads(self, data):
 		"""
-		Method for deserializing event from string.
+		Method for deserializing event from string. To be removed.
 
 		Args:
 			data (str): pickle dump of event-required parameters.
@@ -298,7 +352,7 @@ class Event():
 
 	def dumps(self, compress=False):
 		"""
-		Method for serializing event to string.
+		Method for serializing event to string. To be removed.
 		"""
 		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity, 'cores':self.cores}
 		if compress:
@@ -402,4 +456,4 @@ class Event():
 		index = MatrixSimilarity(tfidf[corpus])
 		scores = index[dictionary.doc2bow(self.cores[deviation_threshold])]
 		for i in range(len(scores)):
-			self.messages.values()[i]['token_score'] = scores[i]
+			self.messages.values()[i]['token_score'] = float(scores[i])

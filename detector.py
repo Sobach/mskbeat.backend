@@ -53,9 +53,13 @@ class EventDetector():
 
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
+		if self.ffr > 1:
+			self.pause = 0
+		else:
+			self.pause = 60
 
 		self.calcualte_eps_dbscan()
-		self.classifier = build_event_classifier()
+		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
 		self.get_dumped_events()
 
 	def run(self):
@@ -65,58 +69,20 @@ class EventDetector():
 		"""
 		while True:
 			self.loop_start = datetime.now()
-			row = []
-			start = datetime.now()
 			self.build_current_trees()
-			row.append((datetime.now() - start).total_seconds())
-			row.append(cpu_percent())
 			if self.current_datapoints:
-				start = datetime.now()
 				self.build_reference_trees(take_origins = False)
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
-
-				start = datetime.now()
 				self.current_datapoints_prefilter()
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
-
-				start = datetime.now()
 				self.get_current_outliers()
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-				row.append(sum([len(x['ids']) for x in self.current_datapoints.values()]))
-
-				start = datetime.now()
 				slice_clusters = self.dbscan_tweets()
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-
-				start = datetime.now()
 				self.merge_slices_to_events(slice_clusters)
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-
-				start = datetime.now()
 				self.dump_current_events()
-				row.append((datetime.now() - start).total_seconds())
-				row.append(cpu_percent())
-
-				f = open('timelogfile.csv', 'a')
-				f.write(','.join([str(x) for x in row])+'\n')
-				f.close()
-
-				#secs = (datetime.now() - start).total_seconds()
-				#print '{}\t{} seconds,\t{} events,\t{} messages'.format(datetime.now(), secs, len(self.events.values()), len([item for sublist in self.current_datapoints.values() for item in sublist]))
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
 					break
-
-				# cpu usage slower: one iteration per 2 minutes
-				pause = 60*2 - (datetime.now() - self.loop_start).total_seconds()
+				# cpu usage slower: one iteration per 1 minute, when working in real time
+				pause = self.pause - (datetime.now() - self.loop_start).total_seconds()
 				if pause > 0:
 					sleep(pause)
 
@@ -291,9 +257,9 @@ class EventDetector():
 			ret_tab = {}
 			for i in range(len(labels)):
 				try:
-					ret_tab[labels[i]].append({'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'cluster':labels[i], 'is_core':ids[i] in core_ids})
+					ret_tab[labels[i]].append({'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'is_core':ids[i] in core_ids})
 				except KeyError:
-					ret_tab[labels[i]] = [{'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'cluster':labels[i], 'is_core':ids[i] in core_ids}]
+					ret_tab[labels[i]] = [{'id':ids[i], 'lng':coords[i,0], 'lat':coords[i,1], 'weight':weights[i], 'is_core':ids[i] in core_ids}]
 			return ret_tab
 		else:
 			return {}
