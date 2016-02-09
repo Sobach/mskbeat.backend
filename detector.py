@@ -14,7 +14,7 @@ from psutil import cpu_percent
 from redis import StrictRedis
 
 # MATH
-from numpy import array, mean, std, absolute, seterr, float32, concatenate
+from numpy import array, mean, std, absolute, seterr, float32, concatenate, zeros
 from networkx import Graph, connected_components
 from sklearn.neighbors import KDTree
 from sklearn.cluster import DBSCAN
@@ -227,6 +227,7 @@ class EventDetector():
 		if self.current_datapoints:
 			for net in self.current_datapoints.keys():
 				if len(self.current_datapoints[net]['array']) < neighbour_points:
+					self.current_datapoints[net]['weights'] = zeros(len(self.current_datapoints[net]['ids']))
 					continue
 				cur_knn_data = mean(self.current_trees[net].query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0], axis=1)
 				ref_knn_data = mean(array([x.query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0] for x in self.reference_trees[net]]), axis=2)
