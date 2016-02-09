@@ -413,7 +413,7 @@ class Event():
 		"""
 		for i in self.messages.keys():
 			if 'tokens' not in self.messages[i].keys():
-				txt = self.messages[i]['text']
+				txt = self.messages[i].get('text', '')
 				txt = sub(self.url_re, '', txt)
 				self.messages[i]['tokens'] = {self.morph.parse(token.decode('utf-8'))[0].normal_form for token in self.tokenizer.tokenize(txt) if match(self.word, token.decode('utf-8'))}
 
