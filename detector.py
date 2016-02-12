@@ -321,13 +321,18 @@ class EventDetector():
 
 		"""
 		for eid in self.events.keys():
+			print datetime.now(), self.events[eid].updated
 			if (datetime.now() - self.events[eid].updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
+				print 'option1'
 				if self.events[eid].authors > 1 or len(self.events[eid].messages.values()) >= 5:
+					print 'option11'
 					self.events[eid].backup()
 				else:
+					print 'option12'
 					self.redis.delete("event:{}".format(eid))
 				del self.events[eid]
 			elif self.events[eid].updated > self.loop_start:
+				print 'option2'
 				self.events[eid].dump()
 
 if __name__ == '__main__':
