@@ -8,6 +8,7 @@ from json import dumps as jdumps, loads as jloads
 from time import sleep, time, mktime
 from datetime import datetime
 from pickle import dumps as pdumps
+from logging import basicConfig, warning, error, WARNING
 
 # DATABASE
 from redis import StrictRedis
@@ -97,9 +98,9 @@ class TwitterStreamThread(Thread):
 				if e.status_code < 500:
 					raise
 				else:
-					pass
-			except TwitterConnectionError:
-				pass
+					error(e)
+			except TwitterConnectionError as e:
+				error(e)
 
 	def get_twitter_media(self, entities, tw_id):
 		"""
@@ -146,7 +147,7 @@ class InstagramHelperThread(Thread):
 				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN)
 				photo_data = get(url, stream=False, timeout=10)
 			except (IndexError, ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error, SysCallError) as e:
-				pass
+				error(e)
 			else:
 				if photo_data.ok:
 					link = photo_data.json()['data']['images']['standard_resolution']['url']
@@ -191,7 +192,7 @@ class InstagramStreamThread(Thread):
 				try:
 					resp = get(url, stream=False, timeout=10)
 				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error, SysCallError) as e:
-					pass
+					error(e)
 				else:
 					if resp.ok:
 						redis_db.set('statistics:ig_last', datetime.now().strftime('%H:%M:%S %d %b %Y'))
@@ -376,10 +377,10 @@ class VKontakteStreamThread(Thread):
 		return medialist
 
 if __name__ == '__main__':
-	import logging
-	logging.basicConfig(level=logging.CRITICAL)
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
+
+	basicConfig(filename='collector.log', level=WARNING, format=u'[%(asctime)s] LINE: #%(lineno)d | THREAD: %(threadName)s | %(levelname)-8s | %(message)s')
 	
 	t = TwitterStreamThread(mysql_db, redis_db)
 	ih = InstagramHelperThread(mysql_db, redis_db)
