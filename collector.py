@@ -16,6 +16,7 @@ from MySQLdb import escape_string
 # NETWORK
 from requests.exceptions import ConnectionError, ReadTimeout, SSLError
 from requests.packages.urllib3.exceptions import ReadTimeoutError, ProtocolError
+from OpenSSL.SSL import SysCallError
 from requests import get, post
 from socket import error as soc_error
 from ssl import SSLError as ssl_SSLError
@@ -144,7 +145,7 @@ class InstagramHelperThread(Thread):
 			try:
 				url = 'https://api.instagram.com/v1/media/shortcode/{}?access_token={}'.format(data[1].split('/')[4], IG_ACCESS_TOKEN)
 				photo_data = get(url, stream=False, timeout=10)
-			except (IndexError, ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error) as e:
+			except (IndexError, ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error, SysCallError) as e:
 				pass
 			else:
 				if photo_data.ok:
@@ -189,7 +190,7 @@ class InstagramStreamThread(Thread):
 					IG_LOCATIONS[i][1], IG_LOCATIONS[i][0], self.last_time[i], IG_ACCESS_TOKEN)
 				try:
 					resp = get(url, stream=False, timeout=10)
-				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error) as e:
+				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error, SysCallError) as e:
 					pass
 				else:
 					if resp.ok:
@@ -280,7 +281,7 @@ class VKontakteStreamThread(Thread):
 				params = {'from_time':self.last_time[i]-1, 'lat':VK_LOCATIONS[i][1], 'lng':VK_LOCATIONS[i][0], 'access_token':VK_ACCESS_TOKEN, 'v':5.42}
 				try:
 					resp = post(url, data=params, stream=False, timeout=15)
-				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error) as e:
+				except (ConnectionError, ProtocolError, ReadTimeout, ReadTimeoutError, SSLError, ssl_SSLError, soc_error, SysCallError) as e:
 					pass
 				else:
 					if resp.ok:
@@ -323,6 +324,8 @@ class VKontakteStreamThread(Thread):
 			wall_posts = {'{}_{}'.format(x['from_id'], x['id']): x for x in data['response']['wall']}
 		except:
 			pass
+		if 'response' not in data or 'places' not in data['response'] or 'items' not in data['response']['places']:
+			return medialist
 		for item in data['response']['places']['items']:
 			if item['id'] in medialist or item['id'] not in wall_posts.keys():
 				continue
