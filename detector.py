@@ -22,6 +22,9 @@ from sklearn.cluster import DBSCAN
 # SYSTEM MATH
 from math import radians, cos, sin, asin, sqrt
 
+# HEAVY NLTK
+from pymorphy2 import MorphAnalyzer
+
 # SELF IMPORT
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
 from utilities import get_mysql_con, exec_mysql, build_event_classifier
@@ -53,6 +56,7 @@ class EventDetector():
 		self.bbox = bbox
 		self.mysql = mysql_con
 		self.redis = redis_con
+		self.morph = MorphAnalyzer()
 
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
@@ -282,7 +286,7 @@ class EventDetector():
 		"""
 		self.events = {}
 		for key in self.redis.keys("event:*"):
-			event = Event(self.mysql, self.redis, self.classifier)
+			event = Event(self.mysql, self.redis, self.morph, self.classifier)
 			event.load(key[6:])
 			self.events[event.id] = event
 
@@ -309,7 +313,7 @@ class EventDetector():
 			unify_events = list(cluster.intersection(events_ids))
 			meta_slice = [msg for i in unify_slices for msg in current_slices[i]]
 			if not unify_events:
-				new_event = Event(self.mysql, self.redis, self.classifier, meta_slice)
+				new_event = Event(self.mysql, self.redis, self.morph, self.classifier, meta_slice)
 				self.events[new_event.id] = new_event
 			elif len(unify_events) == 1 and len(unify_slices) == 1 and set(self.events[unify_events[0]].messages.keys()) == {x['id'] for x in meta_slice}:
 				continue

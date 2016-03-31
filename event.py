@@ -20,7 +20,6 @@ from MySQLdb import escape_string
 from redis import ResponseError
 
 # NLTK
-from pymorphy2 import MorphAnalyzer
 from nltk.tokenize import TreebankWordTokenizer
 from gensim.corpora import Dictionary
 from gensim.models import TfidfModel
@@ -91,19 +90,20 @@ class Event():
 		weight (float): standart deviations below average
 	"""
 
-	def __init__(self, mysql_con, redis_con, classifier = None, points = []):
+	def __init__(self, mysql_con, redis_con, morph = None, classifier = None, points = []):
 		"""
 		Initialization.
 
 		Args:
 			mysql_con (PySQLPoolConnection): MySQL connection Object
 			redis_con (StrictRedis): RedisDB connection Object
+			morph (pymorphy2.MorphAnalyzer): word analyzer - converts words tokens to normalized form. Requires a lot of memory, so it is not created for every event object. 
 			classifier (Object): scikit trained classifier to detect real and fake events
 			points (list[dict]): raw messages from event detector
 		"""
 		self.mysql = mysql_con
 		self.redis = redis_con
-		self.morph = MorphAnalyzer()
+		self.morph = morph
 		self.tokenizer = TreebankWordTokenizer()
 		self.word = compile(r'^\w+$', flags = UNICODE | IGNORECASE)
 		self.url_re = compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
