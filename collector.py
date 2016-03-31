@@ -8,7 +8,7 @@ from json import dumps as jdumps, loads as jloads
 from time import sleep, time, mktime
 from datetime import datetime
 from pickle import dumps as pdumps
-from logging import basicConfig, warning, error, WARNING
+from logging import basicConfig, warning, error, info, INFO, WARNING
 
 # DATABASE
 from redis import StrictRedis
@@ -77,6 +77,8 @@ class TwitterStreamThread(Thread):
 							int('Instagram' in item['source'])
 							)
 						exec_mysql(q, self.mysql)
+						if 'Instagram' not in item['source']:
+							info(u"Twitter data source: {}".format(item['source']))
 						message = {
 							'id':item['id_str'], 
 							'lat':item['coordinates']['coordinates'][1], 
@@ -380,7 +382,7 @@ if __name__ == '__main__':
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
 
-	basicConfig(filename='collector.log', level=WARNING, format=u'[%(asctime)s] LINE: #%(lineno)d | THREAD: %(threadName)s | %(levelname)-8s | %(message)s')
+	basicConfig(filename='collector.log', level=INFO, format=u'[%(asctime)s] LINE: #%(lineno)d | THREAD: %(threadName)s | %(levelname)-8s | %(message)s')
 	
 	t = TwitterStreamThread(mysql_db, redis_db)
 	ih = InstagramHelperThread(mysql_db, redis_db)
