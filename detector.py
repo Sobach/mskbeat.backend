@@ -24,6 +24,7 @@ from math import radians, cos, sin, asin, sqrt
 
 # HEAVY NLTK
 from pymorphy2 import MorphAnalyzer
+from nltk.tokenize import TreebankWordTokenizer
 
 # SELF IMPORT
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
@@ -43,7 +44,7 @@ class EventDetector():
 	clusters from previous steps.
 	"""
 
-	def __init__(self, mysql_con, redis_con, bbox, fast_forward_ratio=1.0):
+	def __init__(self, mysql_con, redis_con, bbox, fast_forward_ratio=1.0, max_dist = 0.2):
 		"""
 		Initialization.
 
@@ -51,12 +52,14 @@ class EventDetector():
 			redis_con (StrictRedis): RedisDB connection Object
 			mysql_con (PySQLPoolConnection): MySQL connection Object
 			bbox (List[float]): min longitude, min latitude, max longitude, max latitude
-			fast_forward_ratio (float): parameter for emulation - the greater param - the faster emulation and
+			fast_forward_ratio (float): parameter for emulation - the greater param - the faster emulation
+			max_dist (float): maximum distance for messages, considered to be a part of the same event (in km)
 		"""
 		self.bbox = bbox
 		self.mysql = mysql_con
 		self.redis = redis_con
 		self.morph = MorphAnalyzer()
+		self.tokenizer = TreebankWordTokenizer()
 
 		self.interrupter = False
 		self.ffr = fast_forward_ratio
@@ -65,14 +68,14 @@ class EventDetector():
 		else:
 			self.pause = 60
 
-		self.calcualte_eps_dbscan()
+		self.calcualte_eps_dbscan(max_dist)
 		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
 		self.get_dumped_events()
 
 	def run(self):
 		"""
 		Main object loop. Looks for actual messages, DBSCANs them, and merges with previously computed events.
-		Interrupts if self.interrupter is set to True.
+		Interrupts when self.interrupter attribute is set to True.
 		"""
 		# Memory tracker
 		i = 0
@@ -100,12 +103,13 @@ class EventDetector():
 				if pause > 0:
 					sleep(pause)
 
-	def calcualte_eps_dbscan(self, max_dist = 0.2):
+	def calcualte_eps_dbscan(self, max_dist):
 		"""
 		Calculate maximum "distance" in coordinates for DBSCAN between points,
-		given bounding box and maximum distance in km.
-		Result:
-			self.eps (float)
+		given bounding box and maximum distance in km. Produces self.eps attribute (float).
+
+		Args:
+			max_dist (float): maximum distance for messages, considered to be a part of the same event (in km)
 		"""
 		lon1, lat1, lon2, lat2 = map(radians, self.bbox)
 		dlon = lon2 - lon1 
@@ -119,7 +123,7 @@ class EventDetector():
 	def build_reference_trees(self, days = 14, take_origins = False, min_points = 10):
 		"""
 		Create kNN-trees (KDTrees) for previous period - 1 day = 1 tree. 
-		These trees are used as reference, when comparing with current kNN-distance.
+		These trees are used as reference, when comparing with current kNN-distances.
 		Trees are created for each network separately.
 		Args:
 			days (int): how many days should be used for reference (by default 2 weeks)
@@ -127,7 +131,7 @@ class EventDetector():
 			min_points (int): minimum number of points for every tree. if there is not enough data, points (0,0) are used
 
 		Result:
-			self.trees (List[KDTree])
+			self.reference_trees (Dict[List[KDTree]]) - Dict keys: 1 (Twitter), 2 (Instagram), 3 (VKontakte)
 		"""
 		self.reference_data = self.get_reference_data(self.reference_time, days, take_origins)
 		networks = [1,2,3]
@@ -154,7 +158,7 @@ class EventDetector():
 		otherwise - use dynamic data from tweets table.
 		Returns MySQL dict
 		Args:
-			time (datetime): timestamp for data of interest. 90% of data is taken from the past, and 10% - from the future.
+			time (datetime): timestamp for data of interest. 90% of data is taken from the past, and 10% - from the future
 			days (int): how many days should be used for reference (by default 2 weeks)
 			take_origins (bool): whether to use actual dynamic data (default), or training dataset
 		"""
@@ -183,6 +187,12 @@ class EventDetector():
 		Building current KDTree from data, stored in Redis database.
 		Every tweet there has expiration time: TIME_SLIDING_WINDOW/fast_forward_ratio
 		So at every time only currently active tweets are selected.
+		Method updates (creates) self.current_datapoints (Dict[Dict]) - dict with three keys (1,2,3 - networks). 
+		Every value of this dict consists of dict with 'array' and 'ids' keys. 
+		'array' is a [lng, lat] numpy array of float32 values.
+		'ids' is a strings numpy array.
+		Method creates/updates self.current_trees Dict(KDTree) for each of networks
+		Method updates self.reference_time (datetime.datetime) variable, and sets it to the maximum timestamp from the datapoints
 		"""
 		data = {}
 		maxtime = []
@@ -203,8 +213,8 @@ class EventDetector():
 				except KeyError:
 					data[message['network']] = {'array':[[message['lng'], message['lat']]], 'ids':[message['id']]}
 		self.current_datapoints = data
+		self.current_trees = {}
 		if data:
-			self.current_trees = {}
 			for net in data.keys():
 				self.current_datapoints[net]['array'] = array(self.current_datapoints[net]['array'], dtype=float32)
 				self.current_datapoints[net]['ids'] = array(self.current_datapoints[net]['ids'])
@@ -213,10 +223,14 @@ class EventDetector():
 
 	def current_datapoints_prefilter(self, neighbour_points = 5):
 		"""
-		Filter from current datapoints, those do not have enough neighbour points in the 2*max_dist radius (in meters)
+		Filter from current datapoints, those that do not have enough neighbour points in the 2*max_dist radius (in meters).
+		Assumption: if there is less than neighbour_points around the data point, it can't be a part of event.
+		Method doesn't take into account networks.
+		This method is computationally cheaper, than self.get_current_outliers, so it is used as a prefilter.
+		Method updates self.current_datapoints dict.
 
 		Args:
-			neighbour_points (int)
+			neighbour_points (int): minimal number of neighbours, every point should have.
 		"""
 		nets = self.current_datapoints.keys()
 		ids = concatenate([self.current_datapoints[x]['ids'] for x in nets])
@@ -229,15 +243,18 @@ class EventDetector():
 
 	def get_current_outliers(self, neighbour_points = 5):
 		"""
+		Method looks for outliers between current datapoints. It estimates average distance to n neighbours. 
+		If it is closer, than average for two weeks minus 3 standart deviations, the point goes to outliers. 
+		Otherwise it is being filtered.
 		Computational part:
 		- calculate mean and standart deviation for kNN distance for current points using referenced KDTrees
 		- compare referenced values with current tree, find outliers (3 standart deviations from mean)
-		Result: returns points without noise (outliers only)
+		Method updates self.current_datapoints dict: filtered points, and 'weight' key for network dict.
+		Weight is a number of standart deviations, that differ current point from average.
 
 		Args:
-			neighbour_points (int)
+			neighbour_points (int): minimal number of neighbours (of points in current dataset).
 		"""
-		points = []
 		if self.current_datapoints:
 			for net in self.current_datapoints.keys():
 				if len(self.current_datapoints[net]['array']) < neighbour_points:
@@ -254,8 +271,8 @@ class EventDetector():
 
 	def dbscan_tweets(self):
 		"""
-		Method clusters points-outliers into slice-clusters using DBSCAN.
-		Returns dict of slice-clusters - base for event-candidates.
+		Method clusters points-outliers (after current_datapoints_prefilter and get_current_outliers) into slice-clusters using DBSCAN.
+		Returns dict of slice-clusters - base for event-candidates. Uses self.eps attribute to estimate cluster boundaries.
 		"""
 		nets = self.current_datapoints.keys()
 		ids = concatenate([self.current_datapoints[x]['ids'] for x in nets])
@@ -281,20 +298,25 @@ class EventDetector():
 
 	def get_dumped_events(self):
 		"""
-		Loading previously saved events from Redis database - 
-		to have data to merge with currently created slice-clusters
+		Method loads previously saved events from Redis database - to have data to merge with currently created slice-clusters.
+		Old events are being dumped to MySQL, and shouldn't be in Redis.
+		Currently method is used only on initialisation. 
 		"""
 		self.events = {}
 		for key in self.redis.keys("event:*"):
-			event = Event(self.mysql, self.redis, self.morph, self.classifier)
+			event = Event(self.mysql, self.redis, self.tokenizer, self.morph, self.classifier)
 			event.load(key[6:])
 			self.events[event.id] = event
 
 	def merge_slices_to_events(self, current_slices):
 		"""
-		Looking for comparation between slices and events.
-		Updating events, if needed; creating new events.
-		Deleting garbage events (that has been merged).
+		Method merges DBSCAN-generated event slices with previously found events. 
+		Bimodal network is used to find connections between events and slices,
+		then slices are being merged with events, or transformed to new ones.
+		Merged events are being deleted.
+
+		Args:
+			current_slices (Dict(List[Dict])): output of self.dbscan_tweets method. Every item of dict is a slice cluster: list with dicts of messages from that cluster.
 		"""
 		slices_ids = set(current_slices.keys())
 		events_ids = set(self.events.keys())
@@ -313,7 +335,7 @@ class EventDetector():
 			unify_events = list(cluster.intersection(events_ids))
 			meta_slice = [msg for i in unify_slices for msg in current_slices[i]]
 			if not unify_events:
-				new_event = Event(self.mysql, self.redis, self.morph, self.classifier, meta_slice)
+				new_event = Event(self.mysql, self.redis, self.tokenizer, self.morph, self.classifier, meta_slice)
 				self.events[new_event.id] = new_event
 			elif len(unify_events) == 1 and len(unify_slices) == 1 and set(self.events[unify_events[0]].messages.keys()) == {x['id'] for x in meta_slice}:
 				continue
@@ -329,10 +351,9 @@ class EventDetector():
 
 	def dump_current_events(self):
 		"""
-		Saves events to Redis after adding new slices and removing expired events.
-		In parallel looks through self.current_events dict: searches for events without updates
-		for TIME_SLIDING_WINDOW/fast_forward_ratio time.
-
+		Method saves events to Redis after adding new slices. Only events, that were updates, are being dumped.
+		Only events with more than one author and more than 4 messages are being dumped to MySQL.
+		In parallel looks through self.current_events dict: searches for events without updates	for TIME_SLIDING_WINDOW/fast_forward_ratio time and dumps them to MySQL.
 		"""
 		for eid in self.events.keys():
 			if (datetime.now() - self.events[eid].updated).total_seconds() > TIME_SLIDING_WINDOW/self.ffr:
