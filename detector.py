@@ -82,18 +82,20 @@ class EventDetector():
 		tr = tracker.SummaryTracker()
 		while True:
 			# Looking for memory leaks
-			with open('test.log', 'a') as logfile:
-				for item in tr.diff():
-					logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
+			with open('test-events_len.log', 'a') as logfile:
+				#for item in tr.diff():
+				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
+				logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
 			self.loop_start = datetime.now()
 			self.build_current_trees()
 			if self.current_datapoints:
 				self.build_reference_trees(take_origins = False)
-				self.current_datapoints_prefilter()
-				self.get_current_outliers()
-				slice_clusters = self.dbscan_tweets()
+				self.current_datapoints_threshold_filter()
+				self.current_datapoints_outliers_filter()
+				slice_clusters = self.current_datapoints_dbscan()
 				self.merge_slices_to_events(slice_clusters)
 				self.dump_current_events()
+
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
@@ -221,12 +223,12 @@ class EventDetector():
 				self.current_trees[net] = KDTree(self.current_datapoints[net]['array'])
 		self.reference_time = datetime.fromtimestamp(max(maxtime))
 
-	def current_datapoints_prefilter(self, neighbour_points = 5):
+	def current_datapoints_threshold_filter(self, neighbour_points = 5):
 		"""
 		Filter from current datapoints, those that do not have enough neighbour points in the 2*max_dist radius (in meters).
 		Assumption: if there is less than neighbour_points around the data point, it can't be a part of event.
 		Method doesn't take into account networks.
-		This method is computationally cheaper, than self.get_current_outliers, so it is used as a prefilter.
+		This method is computationally cheaper, than self.current_datapoints_outliers_filter, so it is used as a prefilter.
 		Method updates self.current_datapoints dict.
 
 		Args:
@@ -241,7 +243,7 @@ class EventDetector():
 			self.current_datapoints[net]['array'] = self.current_datapoints[net]['array'][neighbours_number >= neighbour_points]
 			self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][neighbours_number >= neighbour_points]
 
-	def get_current_outliers(self, neighbour_points = 5):
+	def current_datapoints_outliers_filter(self, neighbour_points = 5):
 		"""
 		Method looks for outliers between current datapoints. It estimates average distance to n neighbours. 
 		If it is closer, than average for two weeks minus 3 standart deviations, the point goes to outliers. 
@@ -269,9 +271,9 @@ class EventDetector():
 				self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][cur_knn_data < thr_knn_data]
 				self.current_datapoints[net]['weights'] = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
 
-	def dbscan_tweets(self):
+	def current_datapoints_dbscan(self):
 		"""
-		Method clusters points-outliers (after current_datapoints_prefilter and get_current_outliers) into slice-clusters using DBSCAN.
+		Method clusters points-outliers (after current_datapoints_threshold_filter and current_datapoints_outliers_filter) into slice-clusters using DBSCAN.
 		Returns dict of slice-clusters - base for event-candidates. Uses self.eps attribute to estimate cluster boundaries.
 		"""
 		nets = self.current_datapoints.keys()
@@ -316,7 +318,7 @@ class EventDetector():
 		Merged events are being deleted.
 
 		Args:
-			current_slices (Dict(List[Dict])): output of self.dbscan_tweets method. Every item of dict is a slice cluster: list with dicts of messages from that cluster.
+			current_slices (Dict(List[Dict])): output of self.current_datapoints_dbscan method. Every item of dict is a slice cluster: list with dicts of messages from that cluster.
 		"""
 		slices_ids = set(current_slices.keys())
 		events_ids = set(self.events.keys())

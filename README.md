@@ -23,6 +23,10 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - New streams for collector: messages "success" level monitoring, engagement stats for selected posts.
 
+#### Changed:
+
+- Detector Memory and CPU consumptions decreased significally.
+
 ### [v1.0.1 event classifier] - 2016-01-27
 
 #### Added:
