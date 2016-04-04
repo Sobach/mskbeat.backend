@@ -32,7 +32,7 @@ from utilities import get_mysql_con, exec_mysql, build_event_classifier
 from event import Event
 
 # MEMORY LEAKS
-from pympler import tracker
+from pympler import tracker, asizeof
 
 seterr(all='ignore')
 
@@ -86,6 +86,9 @@ class EventDetector():
 				#for item in tr.diff():
 				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
 				logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
+			with open('test-memory_snapshot.log', 'w') as logfile:
+				for name in dir(self):
+					logfile.write('{}\t{}\n'.format(name, asizeof.asizeof(getattr(self, name))))
 			self.loop_start = datetime.now()
 			self.build_current_trees()
 			if self.current_datapoints:
