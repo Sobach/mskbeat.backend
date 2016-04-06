@@ -82,13 +82,14 @@ class EventDetector():
 		tr = tracker.SummaryTracker()
 		while True:
 			# Looking for memory leaks
-			with open('test-events_len.log', 'a') as logfile:
+			#with open('test-events_len.log', 'a') as logfile:
 				#for item in tr.diff():
 				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
 				logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
-			with open('test-memory_snapshot.log', 'w') as logfile:
+			with open('test-events_consumption.log', 'a') as logfile:
 				for name in dir(self):
-					logfile.write('{}\t{}\n'.format(name, asizeof.asizeof(getattr(self, name))))
+					if name in ['events', 'reference_data']:
+						logfile.write('{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name))))
 			self.loop_start = datetime.now()
 			self.build_current_trees()
 			if self.current_datapoints:
