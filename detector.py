@@ -85,7 +85,7 @@ class EventDetector():
 			#with open('test-events_len.log', 'a') as logfile:
 				#for item in tr.diff():
 				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
-				logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
+				#logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
 			with open('test-events_consumption.log', 'a') as logfile:
 				for name in dir(self):
 					if name in ['events', 'reference_data']:
