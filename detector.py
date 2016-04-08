@@ -86,10 +86,12 @@ class EventDetector():
 				#for item in tr.diff():
 				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
 				#logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
-			with open('test-events_consumption.log', 'a') as logfile:
+			with open('test-events_consumption_len.log', 'a') as logfile:
 				for name in dir(self):
-					if name in ['events', 'reference_data']:
-						logfile.write('{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name))))
+					if name == 'events':
+						logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name)), len(self.events.values())))
+					elif name == 'reference_data':
+						logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name)), len(self.reference_data)))
 			self.loop_start = datetime.now()
 			self.build_current_trees()
 			if self.current_datapoints:
