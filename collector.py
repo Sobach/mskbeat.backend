@@ -327,7 +327,7 @@ class VKontakteStreamThread(Thread):
 			wall_posts = {'{}_{}'.format(x['from_id'], x['id']): x for x in data['response']['wall']}
 		except:
 			pass
-		if 'response' not in data or 'places' not in data['response'] or 'items' not in data['response']['places']:
+		if not data or 'response' not in data or 'places' not in data['response'] or 'items' not in data['response']['places']:
 			return medialist
 		for item in data['response']['places']['items']:
 			if item['id'] in medialist or item['id'] not in wall_posts.keys():
