@@ -7,8 +7,7 @@ from datetime import datetime, timedelta
 from itertools import groupby, chain
 from pickle import loads as ploads
 from time import sleep
-
-from psutil import cpu_percent
+from copy import deepcopy
 
 # DATABASE
 from redis import StrictRedis
@@ -81,6 +80,8 @@ class EventDetector():
 		i = 0
 		tr = tracker.SummaryTracker()
 		while True:
+			# freeing memory
+			self.events_recreation()
 			# Looking for memory leaks
 			#with open('test-events_len.log', 'a') as logfile:
 				#for item in tr.diff():
@@ -110,6 +111,13 @@ class EventDetector():
 				pause = self.pause - (datetime.now() - self.loop_start).total_seconds()
 				if pause > 0:
 					sleep(pause)
+
+	def events_recreation(self):
+		legacy = deepcopy(self.events)
+		self.events = {}
+		for key in legacy.keys():
+			self.events[key] = legacy[key]
+		return
 
 	def calcualte_eps_dbscan(self, max_dist):
 		"""
