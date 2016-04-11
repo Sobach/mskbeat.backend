@@ -133,6 +133,31 @@ class Event():
 			self.get_media_data()
 			self.event_update()
 
+	def __del__(self):
+		del self.created
+		del self.updated
+		del self.start
+		del self.end
+		del self.messages
+		del self.media
+		del self.cores
+		del self.entropy
+		del self.ppa
+		del self.authors
+		del self.most_active_author
+		del self.authors_share
+		del self.relevant_messages_share
+		del self.duration
+		del self.validity
+		del self.verification
+
+		del self.classifier
+		del self.morph
+		del self.tokenizer
+
+		del self.word
+		del self.url_re
+
 	def __str__(self):
 		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
 		return txt
