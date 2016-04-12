@@ -140,7 +140,7 @@ class EventDetector():
 		next_events = {}
 		for key in self.events.keys():
 			next_events[key] = self.events[key]
-		self.events = ext_events
+		self.events = next_events
 		return
 
 	def calcualte_eps_dbscan(self, max_dist):
