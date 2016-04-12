@@ -137,10 +137,10 @@ class EventDetector():
 					sleep(pause)
 
 	def events_recreation(self):
-		legacy = deepcopy(self.events)
-		self.events = {}
-		for key in legacy.keys():
-			self.events[key] = legacy[key]
+		next_events = {}
+		for key in self.events.keys():
+			next_events[key] = self.events[key]
+		self.events = ext_events
 		return
 
 	def calcualte_eps_dbscan(self, max_dist):
