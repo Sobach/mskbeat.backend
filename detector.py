@@ -80,33 +80,57 @@ class EventDetector():
 		i = 0
 		tr = tracker.SummaryTracker()
 		while True:
-			# freeing memory
-			self.events_recreation()
 			# Looking for memory leaks
 			#with open('test-events_len.log', 'a') as logfile:
 				#for item in tr.diff():
 				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
 				#logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
-			with open('test-events_consumption_len_with_d.log', 'a') as logfile:
-				for name in dir(self):
-					if name == 'events':
-						logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name)), len(self.events.values())))
-					elif name == 'reference_data':
-						logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), name, asizeof.asizeof(getattr(self, name)), len(self.reference_data)))
+			with open('events_consumption.log', 'a') as logfile:
+				logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), 'events', asizeof.asizeof(self.events), len(self.events.values())))
 			self.loop_start = datetime.now()
+			with open('stages_time_consumption.log', 'a') as logfile:
+				logfile.write('{}\t{}\n'.format(datetime.now(), 'current_trees_start'))
 			self.build_current_trees()
+			with open('stages_time_consumption.log', 'a') as logfile:
+				logfile.write('{}\t{}\n'.format(datetime.now(), 'current_trees_end'))
+
 			if self.current_datapoints:
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'reference_trees_start'))
 				self.build_reference_trees(take_origins = False)
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'threshold_filter_start'))
 				self.current_datapoints_threshold_filter()
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'outliers_filter_start'))
 				self.current_datapoints_outliers_filter()
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'dbscan_start'))
 				slice_clusters = self.current_datapoints_dbscan()
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'merge_slices_start'))
 				self.merge_slices_to_events(slice_clusters)
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'dump_start'))
 				self.dump_current_events()
 
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
 					break
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'events_dict_recreation_start'))
+				# freeing memory
+				self.events_recreation()
+
+				with open('stages_time_consumption.log', 'a') as logfile:
+					logfile.write('{}\t{}\n'.format(datetime.now(), 'pausing_start'))
 				# cpu usage slower: one iteration per 1 minute, when working in real time
 				pause = self.pause - (datetime.now() - self.loop_start).total_seconds()
 				if pause > 0:
