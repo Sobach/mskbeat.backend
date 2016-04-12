@@ -77,8 +77,8 @@ class TwitterStreamThread(Thread):
 							int('Instagram' in item['source'])
 							)
 						exec_mysql(q, self.mysql)
-						if 'Instagram' not in item['source']:
-							warning(u"Twitter data source: {}".format(item['source']))
+						#if 'Instagram' not in item['source']:
+						#	warning(u"Twitter data source: {}".format(item['source']))
 						message = {
 							'id':item['id_str'], 
 							'lat':item['coordinates']['coordinates'][1], 
