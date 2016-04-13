@@ -173,7 +173,14 @@ class EventDetector():
 		Result:
 			self.reference_trees (Dict[List[KDTree]]) - Dict keys: 1 (Twitter), 2 (Instagram), 3 (VKontakte)
 		"""
+		with open('ref_tree_time_consumption.log', 'a') as logfile:
+			logfile.write('{}\t{}\n'.format(datetime.now(), 'SQL_request'))
+
 		self.reference_data = self.get_reference_data(self.reference_time, days, take_origins)
+
+		with open('ref_tree_time_consumption.log', 'a') as logfile:
+			logfile.write('{}\t{}\n'.format(datetime.now(), 'Splitting_to_neworks'))
+
 		networks = [1,2,3]
 		preproc = {net:{} for net in networks}
 		for item in self.reference_data:
@@ -182,6 +189,10 @@ class EventDetector():
 			except KeyError: 
 				preproc[item['network']][item['DATE(tstamp)']] = [[item['lng'], item['lat']]]
 		self.reference_trees = {net:[] for net in networks}
+
+		with open('ref_tree_time_consumption.log', 'a') as logfile:
+			logfile.write('{}\t{}\n'.format(datetime.now(), 'Building_trees'))
+
 		for net in networks:
 			if not preproc[net]:
 				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
@@ -190,6 +201,9 @@ class EventDetector():
 				if len(element) < min_points:
 					element += [(0,0)]*(min_points - len(element))
 				self.reference_trees[net].append(KDTree(array(element)))
+
+		with open('ref_tree_time_consumption.log', 'a') as logfile:
+			logfile.write('{}\t{}\n'.format(datetime.now(), 'Ready'))
 
 	def get_reference_data(self, time, days = 14, take_origins = False):
 		"""
