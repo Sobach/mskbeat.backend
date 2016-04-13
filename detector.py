@@ -228,11 +228,21 @@ class EventDetector():
 		min_date = (max_date - timedelta(days = days)).replace(hour = lower_bound.hour, minute = lower_bound.minute)
 		if lower_bound.time() < upper_bound.time():
 			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
+			with open('ref_tree_q_examples.log', 'a') as logfile:
+				logfile.write('{}\t{}\n'.format(datetime.now(), q))
 			data, i = exec_mysql(q, self.mysql)
 		else:
 			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '23:59:59';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'))
+
+			with open('ref_tree_q_examples.log', 'a') as logfile:
+				logfile.write('{}\t{}\n'.format(datetime.now(), q))
+
 			data = exec_mysql(q, self.mysql)[0]
 			q = '''SELECT DATE_ADD(DATE(tstamp),INTERVAL -1 DAY) AS 'DATE(tstamp)', lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '00:00:00' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
+
+			with open('ref_tree_q_examples.log', 'a') as logfile:
+				logfile.write('{}\t{}\n'.format(datetime.now(), q))
+
 			data += exec_mysql(q, self.mysql)[0]
 		return data
 
