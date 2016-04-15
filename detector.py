@@ -123,7 +123,7 @@ class EventDetector():
 				self.events_recreation()
 
 				# daily update tasks
-				if last_maintenance.day != datetime.now().day:
+				if self.last_maintenance.day != datetime.now().day:
 					with open('stages_time_consumption.log', 'a') as logfile:
 						logfile.write('{}\t{}\n'.format(datetime.now(), 'daily_maintenance'))
 					self.daily_maintenance()
@@ -142,7 +142,7 @@ class EventDetector():
 
 		# Creating new reference data table
 		exec_mysql('TRUNCATE ref_data;', self.mysql)
-		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
+		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
 
 		self.last_maintenance = datetime.now()
 
