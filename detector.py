@@ -142,7 +142,7 @@ class EventDetector():
 
 		# Creating new reference data table
 		exec_mysql('TRUNCATE ref_data;', self.mysql)
-		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')))
+		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
 
 		self.last_maintenance = datetime.now()
 
