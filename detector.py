@@ -5,9 +5,7 @@
 # SYSTEM
 from datetime import datetime, timedelta
 from itertools import groupby, chain
-from pickle import loads as ploads
 from time import sleep
-from copy import deepcopy
 
 # DATABASE
 from redis import StrictRedis
@@ -43,7 +41,7 @@ class EventDetector():
 	clusters from previous steps.
 	"""
 
-	def __init__(self, mysql_con, redis_con, bbox, fast_forward_ratio=1.0, max_dist = 0.2):
+	def __init__(self, mysql_con, redis_con, bbox, fast_forward_ratio=1.0, max_dist = 0.2, ref_period = 14, use_real_reference = True):
 		"""
 		Initialization.
 
@@ -53,6 +51,7 @@ class EventDetector():
 			bbox (List[float]): min longitude, min latitude, max longitude, max latitude
 			fast_forward_ratio (float): parameter for emulation - the greater param - the faster emulation
 			max_dist (float): maximum distance for messages, considered to be a part of the same event (in km)
+			ref_period (int): reference period in days: how many days are used to build reference trees
 		"""
 		self.bbox = bbox
 		self.mysql = mysql_con
@@ -61,6 +60,8 @@ class EventDetector():
 		self.tokenizer = TreebankWordTokenizer()
 
 		self.interrupter = False
+		self.ref_days = ref_period
+		self.use_real_reference = use_real_reference
 		self.ffr = fast_forward_ratio
 		if self.ffr > 1:
 			self.pause = 0
@@ -80,56 +81,24 @@ class EventDetector():
 			with open('events_consumption.log', 'a') as logfile:
 				logfile.write('{}\t{}\t{}\t{}\t{}\n'.format(datetime.now(), 'events', asizeof.asizeof(self.events), len(self.events.values()), sum([len(x.messages.values()) for x in self.events.values()])))
 			self.loop_start = datetime.now()
-			with open('stages_time_consumption.log', 'a') as logfile:
-				logfile.write('{}\t{}\n'.format(datetime.now(), 'current_trees_start'))
 			self.build_current_trees()
-			with open('stages_time_consumption.log', 'a') as logfile:
-				logfile.write('{}\t{}\n'.format(datetime.now(), 'current_trees_end'))
-
 			if self.current_datapoints:
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'reference_trees_start'))
 				self.build_reference_trees()
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'threshold_filter_start'))
 				self.current_datapoints_threshold_filter()
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'outliers_filter_start'))
 				self.current_datapoints_outliers_filter()
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'dbscan_start'))
 				slice_clusters = self.current_datapoints_dbscan()
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'merge_slices_start'))
 				self.merge_slices_to_events(slice_clusters)
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'dump_start'))
 				self.dump_current_events()
 
+				# interrupter for emulator
 				if self.interrupter:
 					for event in self.events.values():
 						event.backup()
 					break
 
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'events_dict_recreation_start'))
-
-				# freeing memory
-				self.events_recreation()
-
 				# daily update tasks
 				if self.last_maintenance.day != datetime.now().day:
-					with open('stages_time_consumption.log', 'a') as logfile:
-						logfile.write('{}\t{}\n'.format(datetime.now(), 'daily_maintenance'))
 					self.daily_maintenance()
-
-				with open('stages_time_consumption.log', 'a') as logfile:
-					logfile.write('{}\t{}\n'.format(datetime.now(), 'pausing_start'))
 
 				# cpu usage slower: one iteration per 1 minute, when working in real time
 				pause = self.pause - (datetime.now() - self.loop_start).total_seconds()
@@ -142,15 +111,13 @@ class EventDetector():
 
 		# Creating new reference data table
 		exec_mysql('TRUNCATE ref_data;', self.mysql)
-		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
-
+		if self.use_real_reference:
+			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=self.ref_days+1)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
+		else:
+			exec_mysql('SELECT tstamp FROM tweets_origins ORDER BY tstamp DESC LIMIT 1;', self.mysql)
+			max_date = d[0][0]['tstamp'] - timedelta(days=1)
+			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets_origins WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((max_date - timedelta(days=self.ref_days)).strftime('%Y-%m-%d'), max_date.strftime('%Y-%m-%d')), self.mysql)
 		self.last_maintenance = datetime.now()
-
-	def events_recreation(self):
-		next_events = {}
-		for key in self.events.keys():
-			next_events[key] = self.events[key]
-		self.events = next_events
 
 	def calcualte_eps_dbscan(self, max_dist):
 		"""
@@ -180,14 +147,7 @@ class EventDetector():
 		Result:
 			self.reference_trees (Dict[List[KDTree]]) - Dict keys: 1 (Twitter), 2 (Instagram), 3 (VKontakte)
 		"""
-		with open('ref_tree_time_consumption.log', 'a') as logfile:
-			logfile.write('{}\t{}\n'.format(datetime.now(), 'SQL_request'))
-
 		self.reference_data = self.get_reference_data(self.reference_time)
-
-		with open('ref_tree_time_consumption.log', 'a') as logfile:
-			logfile.write('{}\t{}\n'.format(datetime.now(), 'Splitting_to_neworks'))
-
 		networks = [1,2,3]
 		preproc = {net:{} for net in networks}
 		for item in self.reference_data:
@@ -197,9 +157,6 @@ class EventDetector():
 				preproc[item['network']][item['tstamp']] = [[item['lng'], item['lat']]]
 		self.reference_trees = {net:[] for net in networks}
 
-		with open('ref_tree_time_consumption.log', 'a') as logfile:
-			logfile.write('{}\t{}\n'.format(datetime.now(), 'Building_trees'))
-
 		for net in networks:
 			if not preproc[net]:
 				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*14
@@ -208,9 +165,6 @@ class EventDetector():
 				if len(element) < min_points:
 					element += [(0,0)]*(min_points - len(element))
 				self.reference_trees[net].append(KDTree(array(element)))
-
-		with open('ref_tree_time_consumption.log', 'a') as logfile:
-			logfile.write('{}\t{}\n'.format(datetime.now(), 'Ready'))
 
 	def get_reference_data(self, time):
 		"""
