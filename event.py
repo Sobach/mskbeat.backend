@@ -133,33 +133,6 @@ class Event():
 			self.get_media_data()
 			self.event_update()
 
-	"""
-	def __del__(self):
-		del self.created
-		del self.updated
-		del self.start
-		del self.end
-		del self.messages
-		del self.media
-		del self.cores
-		del self.entropy
-		del self.ppa
-		del self.authors
-		del self.most_active_author
-		del self.authors_share
-		del self.relevant_messages_share
-		del self.duration
-		del self.validity
-		del self.verification
-
-		del self.classifier
-		del self.morph
-		del self.tokenizer
-
-		del self.word
-		del self.url_re
-	"""
-
 	def __str__(self):
 		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
 		return txt
@@ -184,15 +157,20 @@ class Event():
 		self.event_summary_stats()
 		self.is_valid()
 
-	def is_successor(self, slice_ids, threshold = 0):
+	def is_successor(self, slice_ids, jaccard = 0.3, only_relevant = True):
 		"""
 		Method examines, if current event have common messages with specified event slice.
 
 		Args:
 			slice_ids (Set): set if message id's to compare with
-			threshold (int): to recognize connection intersection between event messages and new slice should be more than threshold
+			jaccard (float): minimal jaccard index to recognize connection intersection between event messages and new slice
+			only_relevant (bool): use only messages with non-zero token_score (to exclude spam)
 		"""
-		if len(set(self.messages.keys()).intersection(slice_ids)) > threshold:
+		if only_relevant:
+			event_ids = set([k for k, v in self.messages.items() if v['token_score'] > 0])
+		else:
+			event_ids = set(self.messages.keys())
+		if float(event_ids.intersection(slice_ids))/event_ids.union(slice_ids) >= jaccard:
 			return True
 		return False
 
