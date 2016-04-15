@@ -68,7 +68,7 @@ class EventDetector():
 			self.pause = 60
 
 		self.calcualte_eps_dbscan(max_dist)
-		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
+		self.daily_maintenance()
 		self.get_dumped_events()
 
 	def run(self):
@@ -76,17 +76,9 @@ class EventDetector():
 		Main object loop. Looks for actual messages, DBSCANs them, and merges with previously computed events.
 		Interrupts when self.interrupter attribute is set to True.
 		"""
-		# Memory tracker
-		i = 0
-		tr = tracker.SummaryTracker()
 		while True:
-			# Looking for memory leaks
-			#with open('test-events_len.log', 'a') as logfile:
-				#for item in tr.diff():
-				#	logfile.write('\t'.join([str(x) for x in [i, datetime.now()]+item])+'\n')
-				#logfile.write('{}\t{}\n'.format(datetime.now(), len(self.events.items())))
 			with open('events_consumption.log', 'a') as logfile:
-				logfile.write('{}\t{}\t{}\t{}\n'.format(datetime.now(), 'events', asizeof.asizeof(self.events), len(self.events.values())))
+				logfile.write('{}\t{}\t{}\t{}\t{}\n'.format(datetime.now(), 'events', asizeof.asizeof(self.events), len(self.events.values()), sum([len(x.messages.values()) for x in self.events.values()])))
 			self.loop_start = datetime.now()
 			with open('stages_time_consumption.log', 'a') as logfile:
 				logfile.write('{}\t{}\n'.format(datetime.now(), 'current_trees_start'))
@@ -97,7 +89,7 @@ class EventDetector():
 			if self.current_datapoints:
 				with open('stages_time_consumption.log', 'a') as logfile:
 					logfile.write('{}\t{}\n'.format(datetime.now(), 'reference_trees_start'))
-				self.build_reference_trees(take_origins = False)
+				self.build_reference_trees()
 
 				with open('stages_time_consumption.log', 'a') as logfile:
 					logfile.write('{}\t{}\n'.format(datetime.now(), 'threshold_filter_start'))
@@ -126,22 +118,39 @@ class EventDetector():
 
 				with open('stages_time_consumption.log', 'a') as logfile:
 					logfile.write('{}\t{}\n'.format(datetime.now(), 'events_dict_recreation_start'))
+
 				# freeing memory
 				self.events_recreation()
 
+				# daily update tasks
+				if last_maintenance.day != datetime.now().day:
+					with open('stages_time_consumption.log', 'a') as logfile:
+						logfile.write('{}\t{}\n'.format(datetime.now(), 'daily_maintenance'))
+					self.daily_maintenance()
+
 				with open('stages_time_consumption.log', 'a') as logfile:
 					logfile.write('{}\t{}\n'.format(datetime.now(), 'pausing_start'))
+
 				# cpu usage slower: one iteration per 1 minute, when working in real time
 				pause = self.pause - (datetime.now() - self.loop_start).total_seconds()
 				if pause > 0:
 					sleep(pause)
+
+	def daily_maintenance(self):
+		# Updating classifier
+		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
+
+		# Creating new reference data table
+		exec_mysql('TRUNCATE ref_data;', self.mysql)
+		exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')))
+
+		self.last_maintenance = datetime.now()
 
 	def events_recreation(self):
 		next_events = {}
 		for key in self.events.keys():
 			next_events[key] = self.events[key]
 		self.events = next_events
-		return
 
 	def calcualte_eps_dbscan(self, max_dist):
 		"""
@@ -160,14 +169,12 @@ class EventDetector():
 		dist = sqrt((self.bbox[0] - self.bbox[2])**2 + (self.bbox[1] - self.bbox[3])**2)
 		self.eps = dist * max_dist / km
 
-	def build_reference_trees(self, days = 14, take_origins = False, min_points = 10):
+	def build_reference_trees(self, min_points = 10):
 		"""
 		Create kNN-trees (KDTrees) for previous period - 1 day = 1 tree. 
 		These trees are used as reference, when comparing with current kNN-distances.
 		Trees are created for each network separately.
 		Args:
-			days (int): how many days should be used for reference (by default 2 weeks)
-			take_origins (bool): whether to use actual dynamic data (default), or training dataset
 			min_points (int): minimum number of points for every tree. if there is not enough data, points (0,0) are used
 
 		Result:
@@ -176,7 +183,7 @@ class EventDetector():
 		with open('ref_tree_time_consumption.log', 'a') as logfile:
 			logfile.write('{}\t{}\n'.format(datetime.now(), 'SQL_request'))
 
-		self.reference_data = self.get_reference_data(self.reference_time, days, take_origins)
+		self.reference_data = self.get_reference_data(self.reference_time)
 
 		with open('ref_tree_time_consumption.log', 'a') as logfile:
 			logfile.write('{}\t{}\n'.format(datetime.now(), 'Splitting_to_neworks'))
@@ -185,9 +192,9 @@ class EventDetector():
 		preproc = {net:{} for net in networks}
 		for item in self.reference_data:
 			try: 
-				preproc[item['network']][item['DATE(tstamp)']].append([item['lng'], item['lat']])
-			except KeyError: 
-				preproc[item['network']][item['DATE(tstamp)']] = [[item['lng'], item['lat']]]
+				preproc[item['network']][item['tstamp']].append([item['lng'], item['lat']])
+			except KeyError:
+				preproc[item['network']][item['tstamp']] = [[item['lng'], item['lat']]]
 		self.reference_trees = {net:[] for net in networks}
 
 		with open('ref_tree_time_consumption.log', 'a') as logfile:
@@ -195,7 +202,7 @@ class EventDetector():
 
 		for net in networks:
 			if not preproc[net]:
-				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*days
+				self.reference_trees[net] = [KDTree(array([(0,0)]*min_points))]*14
 				continue
 			for element in preproc[net].values():
 				if len(element) < min_points:
@@ -205,44 +212,25 @@ class EventDetector():
 		with open('ref_tree_time_consumption.log', 'a') as logfile:
 			logfile.write('{}\t{}\n'.format(datetime.now(), 'Ready'))
 
-	def get_reference_data(self, time, days = 14, take_origins = False):
+	def get_reference_data(self, time):
 		"""
 		Load historical data from MySQL.
-		If take_origins, use constant tweets from tweets_origins table,
-		otherwise - use dynamic data from tweets table.
 		Returns MySQL dict
 		Args:
 			time (datetime): timestamp for data of interest. 90% of data is taken from the past, and 10% - from the future
-			days (int): how many days should be used for reference (by default 2 weeks)
-			take_origins (bool): whether to use actual dynamic data (default), or training dataset
 		"""
 		lower_bound = time - timedelta(seconds = TIME_SLIDING_WINDOW * 0.9)
 		upper_bound = time + timedelta(seconds = TIME_SLIDING_WINDOW * 0.1)
-		if take_origins:
-			database = 'tweets_origins'
-			d = exec_mysql('SELECT tstamp FROM tweets_origins ORDER BY tstamp DESC LIMIT 1;', self.mysql)
-			max_date = d[0][0]['tstamp']
-		else:
-			database = 'tweets'
-			max_date = time
-		min_date = (max_date - timedelta(days = days)).replace(hour = lower_bound.hour, minute = lower_bound.minute)
-		if lower_bound.time() < upper_bound.time():
-			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
-			with open('ref_tree_q_examples.log', 'a') as logfile:
-				logfile.write('{}\t{}\n'.format(datetime.now(), q))
+		lower_bound = lower_bound.time().second + lower_bound.time().minute * 60 + lower_bound.time().hour * 3600
+		upper_bound = upper_bound.time().second + upper_bound.time().minute * 60 + upper_bound.time().hour * 3600
+
+		if lower_bound < upper_bound:
+			q = '''SELECT tstamp, lat, lng, network FROM ref_data WHERE `second` BETWEEN {} AND {};'''.format(lower_bound, upper_bound)
 			data, i = exec_mysql(q, self.mysql)
 		else:
-			q = '''SELECT DATE(tstamp), lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '{}' AND TIME(tstamp) <= '23:59:59';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), lower_bound.strftime('%H:%M:%S'))
-
-			with open('ref_tree_q_examples.log', 'a') as logfile:
-				logfile.write('{}\t{}\n'.format(datetime.now(), q))
-
+			q = '''SELECT tstamp, lat, lng, network FROM ref_data WHERE `second` BETWEEN {} AND 86400;'''.format(lower_bound)
 			data = exec_mysql(q, self.mysql)[0]
-			q = '''SELECT DATE_ADD(DATE(tstamp),INTERVAL -1 DAY) AS 'DATE(tstamp)', lat, lng, network FROM {} WHERE tstamp >= '{}' AND tstamp <= '{}' AND TIME(tstamp) >= '00:00:00' AND TIME(tstamp) <= '{}';'''.format(database, min_date.strftime('%Y-%m-%d %H:%M:%S'), max_date.strftime('%Y-%m-%d %H:%M:%S'), upper_bound.strftime('%H:%M:%S'))
-
-			with open('ref_tree_q_examples.log', 'a') as logfile:
-				logfile.write('{}\t{}\n'.format(datetime.now(), q))
-
+			q = '''SELECT DATE_ADD(tstamp,INTERVAL -1 DAY) AS tstamp, lat, lng, network FROM ref_data WHERE `second` BETWEEN 0 AND {};'''.format(upper_bound)
 			data += exec_mysql(q, self.mysql)[0]
 		return data
 
