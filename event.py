@@ -170,7 +170,7 @@ class Event():
 			event_ids = set([k for k, v in self.messages.items() if v['token_score'] > 0])
 		else:
 			event_ids = set(self.messages.keys())
-		if float(event_ids.intersection(slice_ids))/event_ids.union(slice_ids) >= jaccard:
+		if float(len(event_ids.intersection(slice_ids)))/len(event_ids.union(slice_ids)) >= jaccard:
 			return True
 		return False
 
