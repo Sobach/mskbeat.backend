@@ -89,9 +89,15 @@ def exec_mysql(cmd, connection):
 		connection (PySQLPool.PySQLConnection): connection to the database object.
 	"""
 	from PySQLPool import getNewQuery
+	from MySQLdb import OperationalError
+	from logging import error
 	query = getNewQuery(connection, commitOnEnd=True)
-	result = query.Query(cmd)
-	return query.record, result
+	try:
+		result = query.Query(cmd)
+	except OperationalError as e:
+		error(e)
+	else:
+		return query.record, result
 
 def get_mysql_con():
 	"""
@@ -106,6 +112,7 @@ def get_mysql_con():
 	query.Query('SET NAMES utf8mb4;')
 	query.Query('SET CHARACTER SET utf8mb4;')
 	query.Query('SET character_set_connection=utf8mb4;')
+	query.Query('SET innodb_lock_wait_timeout = 300;')
 	return mysql_db
 
 def create_mysql_tables():
@@ -125,6 +132,7 @@ def create_mysql_tables():
 		"""CREATE TABLE `events` (`id` varchar(40) CHARACTER SET utf8mb4 NOT NULL DEFAULT '', `start` datetime DEFAULT NULL, `end` datetime DEFAULT NULL, `msgs` int(11) DEFAULT NULL, `description` text, `dumps` longblob, `verification` tinyint(1) DEFAULT NULL, `validity` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `event_msgs` (`id` int(11) NOT NULL AUTO_INCREMENT, `msg_id` varchar(40) DEFAULT NULL, `event_id` varchar(40) DEFAULT NULL, PRIMARY KEY (`id`), UNIQUE KEY `msg_id` (`msg_id`,`event_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 		"""CREATE TABLE `event_trainer` (`id` int(11) unsigned NOT NULL AUTO_INCREMENT, `tstamp` datetime DEFAULT NULL, `msg_num` int(11) DEFAULT NULL, `media_num` int(11) DEFAULT NULL, `users_num` int(11) DEFAULT NULL, `top_user_share` float DEFAULT NULL, `users_share` float DEFAULT NULL, `users_entropy` float DEFAULT NULL, `posts_per_user` float DEFAULT NULL, `relevant_msg_share` float DEFAULT NULL, `duration` int(11) DEFAULT NULL, `verification` tinyint(1) DEFAULT NULL, PRIMARY KEY (`id`) ENGINE=InnoDB AUTO_INCREMENT=1129 DEFAULT CHARSET=utf8mb4;""",
+		"""CREATE TABLE `ref_data` (`lat` float DEFAULT NULL, `lng` float DEFAULT NULL, `network` tinyint(4) DEFAULT NULL, `tstamp` date DEFAULT NULL, `second` mediumint(9) DEFAULT NULL, KEY `second` (`second`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
 	]
 	for tab in tabs:
 		exec_mysql(tab, con)
