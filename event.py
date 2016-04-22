@@ -7,7 +7,6 @@ from datetime import datetime
 from time import mktime
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
-from pickle import loads as ploads, dumps as pdumps
 from uuid import uuid4
 
 # MATH
@@ -65,7 +64,6 @@ class Event():
 		self.classifier_row: unififed method for creating classifier data-row
 		self.merge: merge current event with another event, update stat Attributes
 		self.add_slice: add messages and media to the event, recompute statistics
-		self.loads / self.dumps: serialize/deserialize event to/from string representation
 		self.load / self.dump: serialize/deserialize event and put/get it to Redis
 		self.backup / self.restore: dump/restore event to/from MySQL long-term storage
 		self.get_messages_data: get MySQL data for messages ids
@@ -225,12 +223,9 @@ class Event():
 		self.event_update()
 		self.updated = datetime.now()
 
-	def backup(self, new_serializer=True):
+	def backup(self):
 		"""
 		Method dumps event to MySQL long-term storage, used for non-evaluating events.
-
-		Args:
-			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		if self.verification is None:
 			ver = 'NULL'
@@ -240,54 +235,42 @@ class Event():
 			val = 'NULL'
 		else:
 			val = int(self.validity)
-		if new_serializer:
-			msg_string = self.pack()
-		else:
-			msg_string = self.dumps(compress=True)
+		msg_string = self.pack()
 		q = b'''INSERT INTO events(id, start, end, msgs, description, dumps, verification, validity) VALUES ("{}", "{}", "{}", {}, "{}", "{}", {}, {}) ON DUPLICATE KEY UPDATE `start`=VALUES(`start`), `end`=VALUES(`end`), `msgs`=VALUES(`msgs`), `description`=VALUES(`description`), `dumps`=VALUES(`dumps`), `verification`=VALUES(`verification`), `validity`=VALUES(`validity`);'''.format(self.id, self.start, self.end, len(self.messages.keys()), escape_string(', '.join([x.encode('utf-8') for x in self.cores[2]])), escape_string(msg_string), ver, val)
 		exec_mysql(q, self.mysql)
 		self.redis.delete("event:{}".format(self.id))
 
-	def restore(self, event_id, new_serializer=True):
+	def restore(self, event_id):
 		"""
 		Method restores event from MySQL table using event_id parameter.
 
 		Args:
 			event_id (str): unique event identifier
-			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		q = '''SELECT dumps FROM events WHERE id="{}"'''.format(event_id)
 		event_data = exec_mysql(q, self.mysql)[0][0]['dumps']
-		if new_serializer:
-			self.unpack(event_data)
-		else:
-			self.loads(event_data)
+		self.unpack(event_data)
 
-	def load(self, event_id, redis_prefix='event', new_serializer=True):
+	def load(self, event_id, redis_prefix='event'):
 		"""
 		Method for deserializing and loading event from Redis database.
 
 		Args:
 			event_id (str): unique event isentifier
 			redis_prefix (str): prefix used in Redis database
-			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		try:
 			event_data = self.redis.hget('{}:{}'.format(redis_prefix, event_id), 'dumps')
 		except ResponseError:
 			event_data = self.redis.get('{}:{}'.format(redis_prefix, event_id))
-		if new_serializer:
-			self.unpack(event_data)
-		else:
-			self.loads(event_data)
+		self.unpack(event_data)
 
-	def dump(self, redis_prefix='event', new_serializer=True):
+	def dump(self, redis_prefix='event'):
 		"""
 		Method for serializing and dumping event to Redis database.
 
 		Args:
 			redis_prefix (str): prefix to use, when storing new key in Redis database
-			new_serializer (bool): whether to use serializer, based on msgpack package (new), or pickle (old one).
 		"""
 		if self.verification is None:
 			ver = 'NULL'
@@ -297,10 +280,7 @@ class Event():
 			val = 'NULL'
 		else:
 			val = int(self.validity)
-		if new_serializer:
-			msg_string = self.pack()
-		else:
-			msg_string = self.dumps()
+		msg_string = self.pack()
 		event = {'start':self.start.strftime("%Y-%m-%d %H:%M:%S"), 'end':self.end.strftime("%Y-%m-%d %H:%M:%S"), 'msgs':len(self.messages.keys()), 'description':', '.join([x.encode('utf-8') for x in self.cores[2]]), 'dumps':msg_string, 'verification':ver, 'validity':val}
 		self.redis.hmset("{}:{}".format(redis_prefix, self.id), event)
 
@@ -354,48 +334,6 @@ class Event():
 			self.get_media_data()
 
 		self.event_update()
-
-	def loads(self, data):
-		"""
-		Method for deserializing event from string. To be removed.
-
-		Args:
-			data (str): pickle dump of event-required parameters.
-		"""
-		event_data = ploads(data)
-		self.messages = event_data['messages']
-		if 'compressed' not in event_data.keys() or not event_data['compressed']:
-			self.media = event_data['media']
-		else:
-			for k, v in self.messages.items():
-				v.update({'id':k})
-			self.get_messages_data()
-			self.media = {}
-			self.get_media_data()
-		self.id = event_data['id']
-		self.created = event_data['created']
-		self.updated = event_data['updated']
-		if 'verification' in event_data.keys():
-			self.verification = event_data['verification']
-		if 'validation' in event_data.keys():
-			self.validation = event_data['validation']
-		if 'cores' in event_data.keys():
-			self.cores = event_data['cores']
-		self.event_update()
-
-	def dumps(self, compress=False):
-		"""
-		Method for serializing event to string. To be removed.
-		"""
-		todump = {'id':self.id, 'created':self.created, 'updated':self.updated, 'verification':self.verification, 'validation':self.validity, 'cores':self.cores}
-		if compress:
-			todump['compressed'] = True
-			todump['messages'] = {k:{'is_core':v['is_core'], 'token_score':v['token_score']} for k,v in self.messages.items()}
-		else:
-			todump['compressed'] = False
-			todump['messages'] = self.messages
-			todump['media'] = self.media
-		return pdumps(todump)
 
 	def get_messages_data(self, ids=None):
 		"""

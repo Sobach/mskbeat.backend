@@ -23,9 +23,21 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 - New streams for collector: messages "success" level monitoring, engagement stats for selected posts.
 
+#### Added:
+
+- Separate SQL table for reference datapoints, updated daily;
+
 #### Changed:
 
-- Detector Memory and CPU consumptions decreased significally.
+- event_trainer SQL table now stores raw events, not features for classifier, so new features could be easily introduced;
+
+- Once a day detector updates refernce data table, and rebuilds classifier, including recently verified events;
+
+- Jaccard index (0.3 by default) is used for event successors detection;
+
+#### Fixed:
+
+- Infinite events with thousands of messages;
 
 ### [v1.0.1 event classifier] - 2016-01-27
 
