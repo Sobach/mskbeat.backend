@@ -134,16 +134,14 @@ class Event():
 			self.event_update()
 
 	def __str__(self):
-		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
+		txt = "<Event {}: {} msgs [{} -- {}]>".format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
 		return txt
 
 	def __unicode__(self):
-		txt = u'<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
-		return txt
+		return unicode(self.__str__())
 
 	def __repr__(self):
-		txt = '<Event {}: {} msgs [{} -- {}]>'.format(self.id, len(self.messages), self.start.strftime("%Y-%m-%d %H:%M"), self.end.strftime("%H:%M"))
-		return txt
+		return self.__str__()
 
 	def event_update(self):
 		"""
@@ -306,9 +304,12 @@ class Event():
 		event = {'start':self.start.strftime("%Y-%m-%d %H:%M:%S"), 'end':self.end.strftime("%Y-%m-%d %H:%M:%S"), 'msgs':len(self.messages.keys()), 'description':', '.join([x.encode('utf-8') for x in self.cores[2]]), 'dumps':msg_string, 'verification':ver, 'validity':val}
 		self.redis.hmset("{}:{}".format(redis_prefix, self.id), event)
 
-	def pack(self):
+	def pack(self, complete=False):
 		"""
 		Method for serializing event to string.
+
+		Args:
+			complete (bool): whether to pack all available data for the event (full texted messages, media links, and cores).
 		"""
 		todump = {
 			'id':self.id,
@@ -317,14 +318,22 @@ class Event():
 			'verification':self.verification,
 			'messages':[{'id':x['id'], 'is_core':x.get('is_core'), 'token_score':x.get('token_score'), 'weight':x.get('weight')} for x in self.messages.values()]
 		}
+
+		if complete:
+			todump['media'] = self.media
+			todump['validity'] = self.validity
+			for i in range(len(todump['messages'])):
+				msg = self.messages[todump['messages'][i]['id']]
+				todump['messages'][i].update({'iscopy':msg['iscopy'], 'lat':msg['lat'], 'lng':msg['lng'], 'network':msg['network'], 'text':msg['text'], 'tstamp':int(mktime(msg['tstamp'].timetuple())), 'user':msg['user']})
 		return packb(todump)
 
-	def unpack(self, data):
+	def unpack(self, data, complete=False):
 		"""
 		Method for deserializing event from string. msgpack lib is used (considered to be faster than pickle).
 
 		Args:
 			data (str): pickle dump of event-required parameters.
+			complete (bool): whether to unpack all available data for the event (full texted messages, media links, and cores), or compute these parameters on the fly.
 		"""
 		data = unpackb(data)
 		self.id = data['id']
@@ -332,9 +341,18 @@ class Event():
 		self.updated = datetime.fromtimestamp(data['updated'])
 		self.verification = data['verification']
 		self.messages = {x['id']:x for x in data['messages']}
-		self.get_messages_data()
-		self.media = {}
-		self.get_media_data()
+
+		if complete:
+			self.validity = data['validity']
+			self.media = data['media']
+			for k in self.messages.keys():
+				self.messages[k]['tstamp'] = datetime.fromtimestamp(self.messages[k]['tstamp'])
+
+		else:
+			self.get_messages_data()
+			self.media = {}
+			self.get_media_data()
+
 		self.event_update()
 
 	def loads(self, data):

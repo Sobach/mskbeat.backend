@@ -146,28 +146,60 @@ def build_event_classifier(classifier_type="tree", balanced=False, classifier_pa
 		balanced (bool): whether to balance number of true and false samples in training set, or not.
 		classifier_params (dict): additional parameters, that would be passed to the classifier object on initialization.
 	"""
+	from event import Event
+	from redis import StrictRedis
+	from settings import REDIS_HOST, REDIS_PORT, REDIS_DB
+	from random import shuffle
+	from datetime import datetime
+	from nltk.tokenize import TreebankWordTokenizer
+	from pymorphy2 import MorphAnalyzer
+
 	if classifier_type == 'tree':
 		from sklearn.tree import DecisionTreeClassifier
 		classifier = DecisionTreeClassifier(**classifier_params)
 	elif classifier_type == 'adaboost':
 		from sklearn.ensemble import AdaBoostClassifier
 		classifier = AdaBoostClassifier(**classifier_params)
-	events = exec_mysql('SELECT * FROM event_trainer', get_mysql_con())[0]
+
+	mysql_con = get_mysql_con()
+	redis_con = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+	morph = MorphAnalyzer()
+	tokenizer = TreebankWordTokenizer()
+
+	real_events = []
+	fake_events = []
+
+	e_ids = exec_mysql('SELECT id, dumps FROM events WHERE verification IS NOT NULL;', mysql_con)[0]
+	for e_id in e_ids:
+		event = Event(mysql_con, redis_con, tokenizer, morph)
+		event.unpack(e_id['dumps'])
+		row = event.classifier_row()
+		if event.verification:
+			real_events.append(row)
+		else:
+			fake_events.append(row)
+	if min([len(real_events), len(fake_events)]) < 1000:
+		e_dumps = exec_mysql('SELECT dump FROM event_trainer;', mysql_con)[0]
+		for dump in e_dumps:
+			event = Event(mysql_con, redis_con, tokenizer, morph)
+			event.unpack(dump['dump'], complete=True)
+			row = event.classifier_row()
+			if event.verification:
+				real_events.append(row)
+			else:
+				fake_events.append(row)
 	if balanced:
 		from random import sample
-		real_events = [x for x in events if x['verification']]
-		fake_events = [x for x in events if not x['verification']]
 		n = min([len(real_events), len(fake_events)])
 		real_events = sample(real_events, n)
 		fake_events = sample(fake_events, n)
-		events = real_events + fake_events
-	data = []
-	result = []
-	for e in events:
-		data.append([e['msg_num'], e['media_num'], e['users_num'], e['top_user_share'], e['users_share'], e['users_entropy'], e['posts_per_user'], e['relevant_msg_share'], e['duration']])
-		result.append(e['verification'])
-	classifier.fit(data, result)
-	return classifier
+	events = real_events + fake_events
+	result = [1]*len(real_events) + [0]*len(fake_events)
+	events = zip(events, result)
+	shuffle(events)
+	result = [x[1] for x in events]
+	events = [x[0] for x in events]
+	classifier.fit(events, result)
 
 def migrate_event_dumps():
 	from redis import StrictRedis
