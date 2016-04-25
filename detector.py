@@ -1,3 +1,5 @@
+# EVENT CLASSIFIER
+
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 # MSK.PULSE backend
@@ -27,9 +29,6 @@ from nltk.tokenize import TreebankWordTokenizer
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, BBOX, TIME_SLIDING_WINDOW
 from utilities import get_mysql_con, exec_mysql, build_event_classifier
 from event import Event
-
-# MEMORY LEAKS
-from pympler import tracker, asizeof
 
 seterr(all='ignore')
 
@@ -78,8 +77,6 @@ class EventDetector():
 		Interrupts when self.interrupter attribute is set to True.
 		"""
 		while True:
-			with open('events_consumption.log', 'a') as logfile:
-				logfile.write('{}\t{}\t{}\t{}\t{}\n'.format(datetime.now(), 'events', asizeof.asizeof(self.events), len(self.events.values()), sum([len(x.messages.values()) for x in self.events.values()])))
 			self.loop_start = datetime.now()
 			self.build_current_trees()
 			if self.current_datapoints:
@@ -107,16 +104,18 @@ class EventDetector():
 
 	def daily_maintenance(self):
 		# Updating classifier
-		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
+		# self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
+		self.classifier = None
 
 		# Creating new reference data table
 		exec_mysql('TRUNCATE ref_data;', self.mysql)
+
 		if self.use_real_reference:
-			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=self.ref_days+1)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
+			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((datetime.now() - timedelta(days=self.ref_days)).strftime('%Y-%m-%d'), (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')), self.mysql)
 		else:
-			exec_mysql('SELECT tstamp FROM tweets_origins ORDER BY tstamp DESC LIMIT 1;', self.mysql)
+			d = exec_mysql('SELECT tstamp FROM tweets_origins ORDER BY tstamp DESC LIMIT 1;', self.mysql)
 			max_date = d[0][0]['tstamp'] - timedelta(days=1)
-			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets_origins WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((max_date - timedelta(days=self.ref_days)).strftime('%Y-%m-%d'), max_date.strftime('%Y-%m-%d')), self.mysql)
+			exec_mysql('''INSERT INTO ref_data SELECT lat, lng, network, DATE(tstamp) as tstamp, TIME_TO_SEC(TIME(tstamp)) AS `second` FROM tweets_origins WHERE DATE(tstamp) BETWEEN '{}' AND '{}' ORDER BY `second` ASC;'''.format((max_date - timedelta(days=self.ref_days-1)).strftime('%Y-%m-%d'), max_date.strftime('%Y-%m-%d')), self.mysql)
 		self.last_maintenance = datetime.now()
 
 	def calcualte_eps_dbscan(self, max_dist):
@@ -166,7 +165,7 @@ class EventDetector():
 					element += [(0,0)]*(min_points - len(element))
 				self.reference_trees[net].append(KDTree(array(element)))
 
-	def get_reference_data(self, time):
+	def get_reference_data(self, time, ):
 		"""
 		Load historical data from MySQL.
 		Returns MySQL dict
@@ -225,7 +224,8 @@ class EventDetector():
 				self.current_datapoints[net]['array'] = array(self.current_datapoints[net]['array'], dtype=float32)
 				self.current_datapoints[net]['ids'] = array(self.current_datapoints[net]['ids'])
 				self.current_trees[net] = KDTree(self.current_datapoints[net]['array'])
-		self.reference_time = datetime.fromtimestamp(max(maxtime))
+		if maxtime:
+			self.reference_time = datetime.fromtimestamp(max(maxtime))
 
 	def current_datapoints_threshold_filter(self, neighbour_points = 5):
 		"""
@@ -266,14 +266,15 @@ class EventDetector():
 				if len(self.current_datapoints[net]['array']) < neighbour_points:
 					self.current_datapoints[net]['weights'] = zeros(len(self.current_datapoints[net]['ids']))
 					continue
-				cur_knn_data = mean(self.current_trees[net].query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0], axis=1)
-				ref_knn_data = mean(array([x.query(self.current_datapoints[net]['array'], k=5, return_distance=True)[0] for x in self.reference_trees[net]]), axis=2)
+				cur_knn_data = self.current_trees[net].query_radius(self.current_datapoints[net]['array'], r=self.eps*2, count_only=True)
+				ref_knn_data = array([x.query_radius(self.current_datapoints[net]['array'], r=self.eps*2, count_only=True) for x in self.reference_trees[net]])
+
 				thr_knn_mean = mean(ref_knn_data, axis=0)
 				thr_knn_std = std(ref_knn_data, axis=0)
-				thr_knn_data =  thr_knn_mean - thr_knn_std  * 3
-				self.current_datapoints[net]['array'] = self.current_datapoints[net]['array'][cur_knn_data < thr_knn_data]
-				self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][cur_knn_data < thr_knn_data]
-				self.current_datapoints[net]['weights'] = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data < thr_knn_data]
+				thr_knn_data =  thr_knn_mean + thr_knn_std  * 3
+				self.current_datapoints[net]['array'] = self.current_datapoints[net]['array'][cur_knn_data > thr_knn_data]
+				self.current_datapoints[net]['ids'] = self.current_datapoints[net]['ids'][cur_knn_data > thr_knn_data]
+				self.current_datapoints[net]['weights'] = (absolute(cur_knn_data - thr_knn_mean)/thr_knn_std)[cur_knn_data > thr_knn_data]
 
 	def current_datapoints_dbscan(self):
 		"""
