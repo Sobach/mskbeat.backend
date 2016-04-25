@@ -1,5 +1,3 @@
-# EVENT CLASSIFIER
-
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 # MSK.PULSE backend
@@ -104,8 +102,7 @@ class EventDetector():
 
 	def daily_maintenance(self):
 		# Updating classifier
-		# self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
-		self.classifier = None
+		self.classifier = build_event_classifier(classifier_type="adaboost", balanced=True)
 
 		# Creating new reference data table
 		exec_mysql('TRUNCATE ref_data;', self.mysql)
