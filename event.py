@@ -80,7 +80,7 @@ class Event():
 		iscopy (int): 1, if message is shared from another network
 		lat (float): latitude
 		lng (float): longitude
-		network (int): 1 for Instagram, 0 for Twitter, 2 for VKontakte
+		network (int): 2 for Instagram, 1 for Twitter, 3 for VKontakte
 		text (str): raw text of the message
 		tokens (Set[str]): collection of stemmed tokens from raw text; created in add_stem_texts()
 		tstamp (datetime): 'created at' timestamp
@@ -428,3 +428,84 @@ class Event():
 		scores = index[dictionary.doc2bow(self.cores[deviation_threshold])]
 		for i in range(len(scores)):
 			self.messages.values()[i]['token_score'] = float(scores[i])
+
+class EventLight(object):
+	"""
+	Event representation for Slack Bot:
+	both short and long.
+	"""
+	def __init__(self, start, end, validity, description, dump, mysql_con):
+		self.start = start
+		self.end = end
+		self.description = description
+		self.duration = self.end - self.start
+		self.validity = validity
+		self.mysql = mysql_con
+		self.load_dump(dump)
+
+	def load_dump(self, dump):
+		event_data = unpackb(dump)
+		self.id = event_data['id']
+		self.created = datetime.fromtimestamp(event_data['created'])
+		self.updated = datetime.fromtimestamp(event_data['updated'])
+		self.verification = event_data['verification']
+		self.messages = {x['id']:x for x in event_data['messages']}
+		self.get_messages_data()
+		self.get_media_data()
+
+	def get_messages_data(self):
+		q = '''SELECT * FROM tweets WHERE id in ({});'''.format(','.join(['"'+str(x)+'"' for x in self.messages.keys()]))
+		data = exec_mysql(q, self.mysql)[0]
+		for item in data:
+			self.messages[item['id']].update(item)
+
+	def get_media_data(self):
+		q = '''SELECT * FROM media WHERE tweet_id in ({});'''.format(','.join(['"'+str(x)+'"' for x in self.messages.keys()]))
+		data = exec_mysql(q, self.mysql)[0]
+		for item in data:
+			self.messages[item['tweet_id']]['media'] = item['url']
+
+	def representation1(self, full=False):
+		txt = [
+			'*Duration:*\t{}'.format(self.duration_representation()),
+			'*Messages:*\t{}/{}'.format(len([x for x in self.messages.values() if x['token_score'] > 0]), len(self.messages)),
+			'*Description:*\t{}'.format(self.description),
+			'=====',
+			'```'
+		]
+		msgs = self.msg_txts
+		if not full:
+			msgs = msgs[:10]
+		txt += msgs+['```']
+		txt = '\n'.join(txt)
+		if len(txt) > 4090:
+			txt = txt[:4090]+'```'
+		return txt
+
+	@property
+	def msg_txts(self):
+		nets = {1:'Twitter', 2:'Instagram', 3:'VKontakte'}
+		ret_list = []
+		nonzero = True
+		for i, item in enumerate(sorted(self.messages.values(), key=lambda x:x['token_score'], reverse=True)):
+			if nonzero and item['token_score'] == 0:
+				ret_list.append('-----')
+				nonzero = False
+			ret_list.append('{}. {}: {} // {}'.format(i+1, nets[item['network']], item['text'], item['tstamp'].strftime("%H:%M")))
+		return ret_list
+
+	def duration_representation(self):
+		val = int(self.duration.total_seconds())
+		secs = val%60
+		mins = val//60
+		if not mins:
+			return '{} seconds'.format(secs)
+		hours = mins//60
+		mins = mins%60
+		if not hours:
+			return '{} min {} sec'.format(mins, secs)
+		days = hours//24
+		hours = hours%24
+		if not days:
+			return '{} h {} min'.format(hours, mins)
+		return '{} d {} hours'.format(days, hours)

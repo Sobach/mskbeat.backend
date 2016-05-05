@@ -216,3 +216,32 @@ def migrate_event_dumps():
 			continue
 		else:
 			e.backup()
+
+def bot_track(uid, message, name='Message'):
+	from json import dumps
+	from requests import post
+	from settings import TELEGRAM_ANALYTICS_TOKEN
+	TRACK_URL = 'https://api.botan.io/track'
+	try:
+		r = post(
+			TRACK_URL,
+			params={"token": TELEGRAM_ANALYTICS_TOKEN, "uid": uid, "name": name},
+			data=dumps(message),
+			headers={'Content-type': 'application/json'},
+		)
+		return r.json()
+	except:
+		return False
+
+def bot_shorten_url(url, user_id):
+	from settings import TELEGRAM_ANALYTICS_TOKEN
+	from requests import get
+	SHORTENER_URL = 'https://api.botan.io/s/'
+	try:
+		return get(SHORTENER_URL, params={
+			'token': TELEGRAM_ANALYTICS_TOKEN,
+			'url': url,
+			'user_ids': str(user_id),
+		}).text
+	except:
+		return url

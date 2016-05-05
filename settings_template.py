@@ -31,6 +31,10 @@ IG_ACCESS_TOKEN = ''
 # VKontakte credentials
 VK_ACCESS_TOKEN = ''
 
+# Telegram bot and analytics tokens
+TELEGRAM_BOT_TOKEN = ''
+TELEGRAM_ANALYTICS_TOKEN = ''
+
 # Locations
 # specify geojson file
 BOUNDS_FILE = 'msk.geojson'

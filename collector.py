@@ -238,7 +238,7 @@ class InstagramStreamThread(Thread):
 					'id':item['id'], 
 					'lat':lat, 
 					'lng':lng, 
-					'tstamp': 	int(mktime(datetime.fromtimestamp(int(item['created_time'])).timetuple())), 
+					'tstamp': int(mktime(datetime.fromtimestamp(int(item['created_time'])).timetuple())), 
 					'network':2
 				}
 				self.redis.hmset("message:{}".format(message['id']), message)

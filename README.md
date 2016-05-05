@@ -17,7 +17,7 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 ### [Unreleased]
 
-#### TBD [Goals for future releases]:
+#### TBD:
 
 - Multi-document text summarisation tool for event.
 
@@ -25,11 +25,17 @@ Event content is extracted from disparate messages and media objects. Produced n
 
 #### Added:
 
+- Telegram bot: currently both UI and administrative backend part;
+
+- EventLight() class - class for event representation, minimized version, without classifier/graps/etc;
+
 - Separate SQL table for reference datapoints, updated daily;
 
 #### Changed:
 
 - event_trainer SQL table now stores raw events, not features for classifier, so new features could be easily introduced;
+
+- Event detector now utilizes number of neighbour messages metric, not average distance;
 
 - Once a day detector updates refernce data table, and rebuilds classifier, including recently verified events;
 
@@ -38,6 +44,8 @@ Event content is extracted from disparate messages and media objects. Produced n
 #### Fixed:
 
 - Infinite events with thousands of messages;
+
+- Memory consumption decreased, tokenizer and stemmer are now initialized in Detector, and are inherited by Events, and not initialized in every Event independently;
 
 ### [v1.0.1 event classifier] - 2016-01-27
 
