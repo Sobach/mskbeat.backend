@@ -8,6 +8,7 @@ from time import mktime
 from re import compile, sub, match, UNICODE, IGNORECASE
 from itertools import groupby, combinations
 from uuid import uuid4
+from logging import error
 
 # MATH
 from numpy import mean, std
@@ -425,7 +426,11 @@ class Event():
 		corpus = [dictionary.doc2bow(text) for text in texts]
 		tfidf = TfidfModel(corpus, id2word=dictionary)
 		index = MatrixSimilarity(tfidf[corpus])
-		scores = index[dictionary.doc2bow(self.cores[deviation_threshold])]
+		try:
+			scores = index[dictionary.doc2bow(self.cores[deviation_threshold])]
+		except IndexError:
+			error('Index error in token scoring for event {}'.format(self.id))
+			scores = [0]*len(self.messages.values())
 		for i in range(len(scores)):
 			self.messages.values()[i]['token_score'] = float(scores[i])
 

@@ -6,6 +6,7 @@
 from datetime import datetime, timedelta
 from itertools import groupby, chain
 from time import sleep
+from logging import basicConfig, warning, error, WARNING
 
 # DATABASE
 from redis import StrictRedis
@@ -370,6 +371,7 @@ class EventDetector():
 				self.events[eid].dump()
 
 if __name__ == '__main__':
+	basicConfig(filename='detector.log', level=WARNING, format=u'[%(asctime)s] LINE: #%(lineno)d | %(levelname)-8s | %(message)s')
 	redis_db = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 	mysql_db = get_mysql_con()
 	detector = EventDetector(mysql_db, redis_db, BBOX, fast_forward_ratio=1)
