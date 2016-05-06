@@ -470,33 +470,57 @@ class EventLight(object):
 		for item in data:
 			self.messages[item['tweet_id']]['media'] = item['url']
 
-	def representation1(self, full=False):
+	def telegram_representation(self, from_msg=0, direction=True):
 		txt = [
+			'*Start:*\t{}'.format(self.start.strftime("%d %B, %H:%M")),
 			'*Duration:*\t{}'.format(self.duration_representation()),
 			'*Messages:*\t{}/{}'.format(len([x for x in self.messages.values() if x['token_score'] > 0]), len(self.messages)),
 			'*Description:*\t{}'.format(self.description),
 			'=====',
 			'```'
 		]
+		length = len('\n'.join(txt))
 		msgs = self.msg_txts
-		if not full:
-			msgs = msgs[:10]
-		txt += msgs+['```']
+		if from_msg <= 0:
+			from_msg = 0
+			direction = True
+		elif from_msg >= len(msgs) - 1:
+			from_msg = len(msgs) - 1
+			direction = False
+		msg_i = from_msg
+		included_msgs = []
+		while True:
+			length += len(msgs[msg_i])+1
+			if length > 4090:
+				break
+			included_msgs.append(msgs[msg_i])
+			if direction:
+				msg_i += 1
+			else:
+				msg_i -= 1
+			if msg_i < 0 or msg_i >= len(msgs):
+				break
+		if direction:
+			start = from_msg
+			fin = from_msg + len(included_msgs) - 1
+		else:
+			start = from_msg - len(included_msgs) + 1
+			fin = from_msg
+			included_msgs.reverse()
+		txt += included_msgs+['```']
 		txt = '\n'.join(txt)
-		if len(txt) > 4090:
-			txt = txt[:4090]+'```'
-		return txt
+		return (txt, (start, fin))
 
 	@property
 	def msg_txts(self):
-		nets = {1:'Twitter', 2:'Instagram', 3:'VKontakte'}
+		nets = {1:'TW', 2:'IG', 3:'VK'}
 		ret_list = []
 		nonzero = True
 		for i, item in enumerate(sorted(self.messages.values(), key=lambda x:x['token_score'], reverse=True)):
 			if nonzero and item['token_score'] == 0:
 				ret_list.append('-----')
 				nonzero = False
-			ret_list.append('{}. {}: {} // {}'.format(i+1, nets[item['network']], item['text'], item['tstamp'].strftime("%H:%M")))
+			ret_list.append('{}. {}-{}: {} // {}'.format(i+1, nets[item['network']], item['user'], item['text'], item['tstamp'].strftime("%H:%M")))
 		return ret_list
 
 	def duration_representation(self):
