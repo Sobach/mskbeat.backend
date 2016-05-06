@@ -120,10 +120,15 @@ def confirm_value(bot, update):
 			data = packb(data)
 			q = b'''UPDATE events SET dumps = "{}", verification = {} WHERE id = "{}";'''.format(escape_string(data), verific_dict[query.data], CONTEXT[user]['event'])
 			exec_mysql(q, mysql_con)
+			del CONTEXT[user]['event']
+			del CONTEXT[user]['event_dump']
+			del CONTEXT[user]['event_limits']
 			bot.answerCallbackQuery(query.id, text="Ok!")
 			publish_event(bot, user)
-		elif query.data == 'teach.more_data':
-			publish_event(bot, user, True)
+		elif query.data == 'teach.prev_msgs':
+			publish_event(bot, user, CONTEXT[user]['event_limits'][0]-1, False)
+		elif query.data == 'teach.next_msgs':
+			publish_event(bot, user, CONTEXT[user]['event_limits'][1]+1, True)
 		elif query.data == 'teach.finish':
 			bot.sendMessage(text=TEXTS['teach.finish'], chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
 			del CONTEXT[user]
@@ -132,15 +137,16 @@ def confirm_value(bot, update):
 	else:
 		bot.answerCallbackQuery(query.id, text="What we were talking about?")
 
-def publish_event(bot, user, republish_full = False):
+def publish_event(bot, user, from_msg=0, direction=True):
 	global CONTEXT
 	keyboard = InlineKeyboardMarkup(
 		[[InlineKeyboardButton(Emoji.WHITE_HEAVY_CHECK_MARK.decode('utf-8')+' Real', callback_data='teach.real'),
 		InlineKeyboardButton(Emoji.CROSS_MARK.decode('utf-8')+' Fake', callback_data='teach.fake'),
-		InlineKeyboardButton(Emoji.BLACK_QUESTION_MARK_ORNAMENT.decode('utf-8')+' Add data', callback_data='teach.more_data'),
+		InlineKeyboardButton(Emoji.BLACK_LEFT_POINTING_TRIANGLE.decode('utf-8')+' Prev', callback_data='teach.prev_msgs'),
+		InlineKeyboardButton(Emoji.BLACK_RIGHT_POINTING_TRIANGLE.decode('utf-8')+' Next', callback_data='teach.next_msgs'),
 		InlineKeyboardButton(Emoji.BACK_WITH_LEFTWARDS_ARROW_ABOVE.decode('utf-8')+' Break', callback_data='teach.finish'),
 		]])
-	if not republish_full:
+	if 'event' not in CONTEXT[user].keys():
 		try:
 			event = get_random_event()
 		except ValueError:
@@ -150,11 +156,10 @@ def publish_event(bot, user, republish_full = False):
 		else:
 			CONTEXT[user]['event'] = event.id
 			CONTEXT[user]['event_dump'] = event
-			txt = event.representation1()
-	else:
-		txt = CONTEXT[user]['event_dump'].representation1(full=True)
-	txt = txt.decode('utf-8', errors='replace')
-	bot.editMessageText(text=txt, chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+			CONTEXT[user]['event_limits'] = (0,0)
+
+	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
+	bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 
 def get_random_event():
 	q = 'SELECT * FROM events WHERE verification IS NULL AND description != "" ORDER BY end DESC LIMIT 5;'
