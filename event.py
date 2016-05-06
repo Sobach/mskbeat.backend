@@ -154,7 +154,7 @@ class Event():
 		self.event_summary_stats()
 		self.is_valid()
 
-	def is_successor(self, slice_ids, jaccard = 0.3, only_relevant = True):
+	def is_successor(self, slice_ids, jaccard = 0.15, only_relevant = True):
 		"""
 		Method examines, if current event have common messages with specified event slice.
 
