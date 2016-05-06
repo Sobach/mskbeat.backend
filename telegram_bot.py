@@ -12,9 +12,14 @@ from event import EventLight
 from utilities import bot_track
 from MySQLdb import escape_string
 from msgpack import packb, unpackb
+import unicodedata, re
 
 import logging
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+all_chars = (unichr(i) for i in xrange(0x110000))
+control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
+control_char_re = re.compile('[%s]' % re.escape(control_chars))
 
 CONTEXT = {}
 
@@ -160,10 +165,10 @@ def publish_event(bot, user, from_msg=0, direction=True):
 
 	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
 	try:
-		bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+		bot.editMessageText(text=remove_control_chars(to_pubplish).decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 	except TelegramError as e:
 		print e
-		print to_pubplish.decode('utf-8', errors='replace')
+		print to_pubplish
 		del CONTEXT[user]
 
 def get_random_event():
@@ -175,6 +180,28 @@ def get_random_event():
 
 def error(bot, update, error):
 	logging.warning('Update "%s" caused error "%s"' % (update, error))
+
+def remove_control_chars(s):
+	return control_char_re.sub('\n', s)
+
+TXT = u"""Start: 06 May, 09:03
+Duration: 44 min 26 sec
+Messages: 2/7
+Description: без
+5. IG-560448892: Всем мир✌️🏻️
+Будьте счастливы 🖕🏿 // 09:47
+6. IG-3248978: алёна и я-на! // 09:47
+7. IG-2001723580: 🚶🏻🏃🏼 // 09:17
+"""
+
+def test_command(bot, update):
+	msg = bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['teach.placeholder'])
+	print msg
+	txt = 'aklfdjs;adlkfjsa;dlkfjasd;flkdsajf'
+	print TXT
+	bot.editMessageText(text=remove_control_chars(TXT), chat_id=msg.chat_id, message_id=msg.message_id, parse_mode="Markdown")
+
+dispatcher.addHandler(CommandHandler('test', test_command))
 
 dispatcher.addHandler(CommandHandler('start', start_command))
 dispatcher.addHandler(CommandHandler('help', help_command))
