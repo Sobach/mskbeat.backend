@@ -18,6 +18,31 @@ logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(le
 
 CONTEXT = {}
 
+TEXTS = {
+'help.regular':"""Welcome to our bot-newsroom. Our media is fully controlled by bots. Journalists-bots scan social media, and look for newsbreaks. Editor-bot selects events, that you may be interested in. And I'm, the anchor-bot from Telegram, broadcasting news to you.
+
+You can control me by sending these commands:
+
+/now - Current event list
+/trending - Top recent events""",
+
+'help.admin':"""Welcome to our bot-newsroom. Our media is fully controlled by bots. Journalists-bots scan social media, and look for newsbreaks. Editor-bot selects events, that you may be interested in. And I'm, the anchor-bot from Telegram, broadcasting news to you.
+
+You can control me by sending these commands:
+
+/now - Current event list
+/trending - Top recent events
+/teach - Training Editor-bot to distinguish real events from white noise""",
+
+'teach.start':"""That's great! Let's improve my skill of event detecting. I will show you random social media messages clusters, and you should answer, if it is a real newsbreak. Got tired? Press "Break".""",
+
+'teach.placeholder':"""Wait, while we are loading an event...""",
+
+'teach.nodata':"""Unfortunately, there is nothing to classify yet. Come back later.""",
+
+'teach.finish':"""Ok. That's enough for now. Let's have a break.""",
+}
+
 updater = Updater(token=TELEGRAM_BOT_TOKEN)
 dispatcher = updater.dispatcher
 redis_con = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
@@ -41,65 +66,85 @@ def role_dispatcher(role=None):
 
 def send_stat(func):
 	def wrapper(bot, update):
-		bot_track(update.message.from_user, update.message.to_dict(), update.message.text)
+		if getattr(update, 'message', None):
+			user = update.message.from_user
+			event_dict = update.message.to_dict()
+			action = update.message.text
+		elif getattr(update, 'callback_query', None):
+			user = update.callback_query.from_user
+			event_dict = update.callback_query.to_dict()
+			action = update.callback_query.data
+		else:
+			user = 'unknown'
+			event_dict = {}
+			action = 'unknown'
+		bot_track(user, event_dict, action)
 		return func(bot, update)
 	return wrapper
 
 @send_stat
-@role_dispatcher("tester")
-def start_command(bot, update):
-	text = """Welcome to our bot-newsroom. Our media is fully controlled by bots. Journalists-bots scan social media, and look for newsbreaks. Editor-bot selects events, that you may be interested in. And I'm, the anchor-bot from Telegram, broadcasting news to you.
-
-You can control me by sending these commands:
-
-/now - Current event list
-/trending - Top recent events"""
-
-	bot.sendMessage(chat_id=update.message.chat_id, text=text)
+@role_dispatcher()
+def start_command(bot, update, role):
+	if role == 'admin':
+		bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['help.admin'])
+	elif role == 'tester':
+		bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['help.regular'])
 
 @send_stat
 @role_dispatcher()
 def help_command(bot, update, role):
 	if role=='admin':
-		text = """Welcome to our bot-newsroom. Our media is fully controlled by bots. Journalists-bots scan social media, and look for newsbreaks. Editor-bot selects events, that you may be interested in. And I'm, the anchor-bot from Telegram, broadcasting news to you.
-
-You can control me by sending these commands:
-
-/now - Current event list
-/trending - Top recent events
-/teach - Training Editor-bot to distinguish real events from white noise"""
-
+		bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['help.admin'])
 	else:
-		text = """Welcome to our bot-newsroom. Our media is fully controlled by bots. Journalists-bots scan social media, and look for newsbreaks. Editor-bot selects events, that you may be interested in. And I'm, the anchor-bot from Telegram, broadcasting news to you.
-
-You can control me by sending these commands:
-
-/now - Current event list
-/trending - Top recent events"""
-
-	bot.sendMessage(chat_id=update.message.chat_id, text=text)
+		bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['help.regular'])
 
 @role_dispatcher("admin")
 def teach_command(bot, update):
 	global CONTEXT
-	bot.sendMessage(chat_id=update.message.chat_id, text="That's great! Let's improve my skill of event detecting. I will show you random social media messages clusters, and you should answer, if it is a real newsbreak. Got tired? Press \"Break\".", reply_markup=ReplyKeyboardHide())
-	msg = bot.sendMessage(chat_id=update.message.chat_id, text='Wait, while we are loading event...')
+	bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['teach.start'], reply_markup=ReplyKeyboardHide())
+	msg = bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['teach.placeholder'])
 	CONTEXT[str(update.message.from_user.id)] = {'chat':msg.chat_id, 'message':msg.message_id}
 	publish_event(bot, str(update.message.from_user.id))
+
+@send_stat
+def confirm_value(bot, update):
+	query = update.callback_query
+	user = str(query.from_user.id)
+	verific_dict = {'teach.real':1, 'teach.fake':0}
+	global CONTEXT
+	if user in CONTEXT.keys():
+		q = 'SELECT dumps FROM events WHERE id = "{}";'.format(CONTEXT[user]['event'])
+		data = unpackb(exec_mysql(q, mysql_con)[0][0]['dumps'])
+		if query.data in ['teach.real', 'teach.fake']:
+			data['verification'] = int(verific_dict[query.data])
+			data = packb(data)
+			q = b'''UPDATE events SET dumps = "{}", verification = {} WHERE id = "{}";'''.format(escape_string(data), verific_dict[query.data], CONTEXT[user]['event'])
+			exec_mysql(q, mysql_con)
+			bot.answerCallbackQuery(query.id, text="Ok!")
+			publish_event(bot, user)
+		elif query.data == 'teach.more_data':
+			publish_event(bot, user, True)
+		elif query.data == 'teach.finish':
+			bot.sendMessage(text=TEXTS['teach.finish'], chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
+			del CONTEXT[user]
+		else:
+			bot.answerCallbackQuery(query.id, text="Strange answer...")
+	else:
+		bot.answerCallbackQuery(query.id, text="What we were talking about?")
 
 def publish_event(bot, user, republish_full = False):
 	global CONTEXT
 	keyboard = InlineKeyboardMarkup(
-		[[InlineKeyboardButton(Emoji.WHITE_HEAVY_CHECK_MARK.decode('utf-8')+' Real', callback_data='1'),
-		InlineKeyboardButton(Emoji.CROSS_MARK.decode('utf-8')+' Fake', callback_data='0'),
-		InlineKeyboardButton(Emoji.BLACK_QUESTION_MARK_ORNAMENT.decode('utf-8')+' Add data', callback_data='unknown'),
-		InlineKeyboardButton(Emoji.BACK_WITH_LEFTWARDS_ARROW_ABOVE.decode('utf-8')+' Break', callback_data='stop'),
+		[[InlineKeyboardButton(Emoji.WHITE_HEAVY_CHECK_MARK.decode('utf-8')+' Real', callback_data='teach.real'),
+		InlineKeyboardButton(Emoji.CROSS_MARK.decode('utf-8')+' Fake', callback_data='teach.fake'),
+		InlineKeyboardButton(Emoji.BLACK_QUESTION_MARK_ORNAMENT.decode('utf-8')+' Add data', callback_data='teach.more_data'),
+		InlineKeyboardButton(Emoji.BACK_WITH_LEFTWARDS_ARROW_ABOVE.decode('utf-8')+' Break', callback_data='teach.finish'),
 		]])
 	if not republish_full:
 		try:
 			event = get_random_event()
 		except ValueError:
-			bot.sendMessage(text='Unfortunately, there is nothing to classify yet. Come back later.', chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
+			bot.sendMessage(text=TEXTS['teach.nodata'], chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
 			del CONTEXT[user]
 			return
 		else:
@@ -108,6 +153,7 @@ def publish_event(bot, user, republish_full = False):
 			txt = event.representation1()
 	else:
 		txt = CONTEXT[user]['event_dump'].representation1(full=True)
+	txt = txt.decode('unicode', errors='replace')
 	bot.editMessageText(text=txt, chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 
 def get_random_event():
@@ -116,30 +162,6 @@ def get_random_event():
 	data = sample(data,1)[0]
 	event = EventLight(start=data['start'], end=data['end'], validity=data['validity'], description=data['description'], dump=data['dumps'], mysql_con=mysql_con)
 	return event
-
-def confirm_value(bot, update):
-	query = update.callback_query
-	user = str(query.from_user.id)
-	global CONTEXT
-	if user in CONTEXT.keys():
-		q = 'SELECT dumps FROM events WHERE id = "{}";'.format(CONTEXT[user]['event'])
-		data = unpackb(exec_mysql(q, mysql_con)[0][0]['dumps'])
-		if query.data in ['1', '0']:
-			data['verification'] = int(query.data)
-			data = packb(data)
-			q = b'''UPDATE events SET dumps = "{}", verification = {} WHERE id = "{}";'''.format(escape_string(data), query.data, CONTEXT[user]['event'])
-			exec_mysql(q, mysql_con)
-			bot.answerCallbackQuery(query.id, text="Ok!")
-			publish_event(bot, user)
-		elif query.data == 'unknown':
-			publish_event(bot, user, True)
-		elif query.data == 'stop':
-			bot.sendMessage(text="Ok. That's enough for now. Let's have a break.", chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
-			del CONTEXT[user]
-		else:
-			bot.answerCallbackQuery(query.id, text="Strange answer...")
-	else:
-		bot.answerCallbackQuery(query.id, text="What we were talking about?")
 
 def error(bot, update, error):
 	logging.warning('Update "%s" caused error "%s"' % (update, error))
