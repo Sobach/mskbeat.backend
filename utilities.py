@@ -17,6 +17,14 @@ def drange(start, stop, step):
 		yield r
 		r += step
 
+def escape_md(txt):
+	txt = txt.replace('_', '\_')
+	txt = txt.replace('*', '\*')
+	txt = txt.replace('`', '\`')
+	txt = txt.replace('[', '\[')
+	txt = txt.replace('(', '\(')
+	return txt
+
 def get_circles_centers(bbox, radius=5000, polygons=None):
 	"""
 	Function calculates centers for circles, that would cover all the bounding box, or area inside polygons. 

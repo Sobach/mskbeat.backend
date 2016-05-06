@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # MSK.PULSE backend
 
-from telegram import Emoji, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardHide
+from telegram import Emoji, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardHide, TelegramError
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 from redis import StrictRedis
 from settings import REDIS_HOST, REDIS_PORT, REDIS_DB, TELEGRAM_BOT_TOKEN
@@ -159,7 +159,12 @@ def publish_event(bot, user, from_msg=0, direction=True):
 			CONTEXT[user]['event_limits'] = (0,0)
 
 	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
-	bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+	try:
+		bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+	except TelegramError as e:
+		print e
+		print to_pubplish.decode('utf-8', errors='replace')
+		del CONTEXT[user]
 
 def get_random_event():
 	q = 'SELECT * FROM events WHERE verification IS NULL AND description != "" ORDER BY end DESC LIMIT 5;'

@@ -30,7 +30,7 @@ from pymorphy2 import MorphAnalyzer
 from msgpack import packb, unpackb
 
 # SELF IMPORT
-from utilities import exec_mysql, build_event_classifier
+from utilities import exec_mysql, build_event_classifier, escape_md
 
 class Event():
 	"""
@@ -473,10 +473,10 @@ class EventLight(object):
 
 	def telegram_representation(self, from_msg=0, direction=True):
 		txt = [
-			'*Start:*\t{}'.format(self.start.strftime("%d %B, %H:%M")),
-			'*Duration:*\t{}'.format(self.duration_representation()),
-			'*Messages:*\t{}/{}'.format(len([x for x in self.messages.values() if x['token_score'] > 0]), len(self.messages)),
-			'*Description:*\t{}'.format(self.description),
+			'*Start:*\t{}'.format(escape_md(self.start.strftime("%d %B, %H:%M"))),
+			'*Duration:*\t{}'.format(escape_md(self.duration_representation())),
+			'*Messages:*\t{}/{}'.format(escape_md(len([x for x in self.messages.values() if x['token_score'] > 0]), len(self.messages))),
+			'*Description:*\t{}'.format(escape_md(self.description)),
 			'=====',
 			'```'
 		]
