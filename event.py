@@ -475,6 +475,7 @@ class EventLight(object):
 
 	def telegram_representation(self, from_msg=0, direction=True):
 		txt = [
+			'{}'.format(self.id),
 			'*Start:*\t{}'.format(self.start.strftime("%d %B, %H:%M")),
 			'*Duration:*\t{}'.format(self.duration_representation()),
 			'*Messages:*\t{}/{}'.format(len([x for x in self.messages.values() if x['token_score'] > 0]), len(self.messages)),
