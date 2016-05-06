@@ -154,20 +154,21 @@ class Event():
 		self.event_summary_stats()
 		self.is_valid()
 
-	def is_successor(self, slice_ids, jaccard = 0.15, only_relevant = True):
+	def is_successor(self, slice_ids, sim_index = 0.3, only_relevant = True):
 		"""
 		Method examines, if current event have common messages with specified event slice.
 
 		Args:
 			slice_ids (Set): set if message id's to compare with
-			jaccard (float): minimal jaccard index to recognize connection intersection between event messages and new slice
+			sim_index (float): minimal share of messages that should match in slice to be detected as a successor
 			only_relevant (bool): use only messages with non-zero token_score (to exclude spam)
 		"""
 		if only_relevant:
 			event_ids = set([k for k, v in self.messages.items() if v['token_score'] > 0])
 		else:
 			event_ids = set(self.messages.keys())
-		if float(len(event_ids.intersection(slice_ids)))/len(event_ids.union(slice_ids)) >= jaccard:
+		#if float(len(event_ids.intersection(slice_ids)))/len(event_ids.union(slice_ids)) >= jaccard:
+		if float(len(event_ids.intersection(slice_ids)))/min((len(event_ids), len(slice_ids))) >= sim_index:
 			return True
 		return False
 
