@@ -153,7 +153,7 @@ def publish_event(bot, user, republish_full = False):
 			txt = event.representation1()
 	else:
 		txt = CONTEXT[user]['event_dump'].representation1(full=True)
-	txt = txt.decode('unicode', errors='replace')
+	txt = txt.decode('utf-8', errors='replace')
 	bot.editMessageText(text=txt, chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 
 def get_random_event():
