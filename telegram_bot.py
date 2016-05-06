@@ -13,6 +13,7 @@ from utilities import bot_track
 from MySQLdb import escape_string
 from msgpack import packb, unpackb
 import unicodedata, re
+import pickle
 
 import logging
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -169,6 +170,7 @@ def publish_event(bot, user, from_msg=0, direction=True):
 	except TelegramError as e:
 		print e
 		print to_pubplish
+		pickle.dump(to_pubplish, open('telegram_err.pickle', 'wb'))
 		del CONTEXT[user]
 
 def get_random_event():
