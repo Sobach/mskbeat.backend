@@ -12,7 +12,6 @@ from event import EventLight
 from utilities import bot_track
 from MySQLdb import escape_string
 from msgpack import packb, unpackb
-import pickle
 
 import logging
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -161,12 +160,15 @@ def publish_event(bot, user, from_msg=0, direction=True):
 
 	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
 	try:
-		bot.editMessageText(text=to_pubplish.decode('utf-8', errors='backslashreplace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+		bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 	except TelegramError as e:
-		print e
-		print to_pubplish
-		pickle.dump(to_pubplish, open('telegram_err.pickle', 'wb'))
-		del CONTEXT[user]
+		if str(e) == 'Bad Request: message is not modified (400)':
+			pass
+		else:
+			print e
+			print to_pubplish
+			pickle.dump(to_pubplish, open('telegram_err.pickle', 'wb'))
+			del CONTEXT[user]
 
 def get_random_event():
 	q = 'SELECT * FROM events WHERE verification IS NULL AND description != "" ORDER BY end DESC LIMIT 5;'
@@ -178,13 +180,18 @@ def get_random_event():
 def error(bot, update, error):
 	logging.warning('Update "%s" caused error "%s"' % (update, error))
 
-"""def test_command(bot, update):
+"""
+def test_command(bot, update):
 	msg = bot.sendMessage(chat_id=update.message.chat_id, text=TEXTS['teach.placeholder'])
-	TXT = pickle.load(open('telegram_err.pickle', 'rb'))
-	print TXT.decode('utf-8', errors='backslashreplace')
-	bot.editMessageText(text=TXT.decode('utf-8', errors='replace'), chat_id=msg.chat_id, message_id=msg.message_id, parse_mode="Markdown")
-
-dispatcher.addHandler(CommandHandler('test', test_command))"""
+	try:
+		bot.editMessageText(text=TEXTS['teach.placeholder'], chat_id=msg.chat_id, message_id=msg.message_id, parse_mode="Markdown")
+	except TelegramError as e:
+		if str(e) == 'Bad Request: message is not modified (400)':
+			pass
+		else:
+			print e
+dispatcher.addHandler(CommandHandler('test', test_command))
+"""
 
 dispatcher.addHandler(CommandHandler('start', start_command))
 dispatcher.addHandler(CommandHandler('help', help_command))
