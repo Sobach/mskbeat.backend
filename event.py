@@ -165,6 +165,8 @@ class Event():
 		"""
 		if only_relevant:
 			event_ids = set([k for k, v in self.messages.items() if v['token_score'] > 0])
+			if not event_ids:
+				event_ids = set(self.messages.keys())
 		else:
 			event_ids = set(self.messages.keys())
 		#if float(len(event_ids.intersection(slice_ids)))/len(event_ids.union(slice_ids)) >= jaccard:
