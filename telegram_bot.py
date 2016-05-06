@@ -165,7 +165,7 @@ def publish_event(bot, user, from_msg=0, direction=True):
 
 	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
 	try:
-		bot.editMessageText(text=remove_control_chars(to_pubplish).decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+		bot.editMessageText(text=remove_control_chars(to_pubplish.decode('utf-8', errors='replace')), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 	except TelegramError as e:
 		print e
 		print to_pubplish
