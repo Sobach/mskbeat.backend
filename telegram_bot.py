@@ -161,7 +161,6 @@ def publish_event(bot, user, from_msg=0, direction=True):
 
 	to_publish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
 	try:
-		print to_publish.decode('utf-8', errors='replace')
 		bot.editMessageText(text=to_publish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 	except TelegramError as e:
 		if str(e) == 'Bad Request: message is not modified (400)':
