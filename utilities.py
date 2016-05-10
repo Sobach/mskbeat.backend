@@ -112,10 +112,15 @@ def get_mysql_con():
 	Function for creating PySQLPool.PySQLConnection object from settings parameters.
 	Additionaly sets up names, and connection charset to utf8mb4.
 	"""
-	from PySQLPool import getNewPool, getNewConnection, getNewQuery
+	from PySQLPool import getNewPool, getNewConnection
 	from settings import MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_DB
 	getNewPool().maxActiveConnections = 1
 	mysql_db = getNewConnection(username=MYSQL_USER, password=MYSQL_PASSWORD, host=MYSQL_HOST, db=MYSQL_DB)
+	mysql_db = refresh_mysql_con(mysql_db)
+	return mysql_db
+
+def refresh_mysql_con(mysql_db):
+	from PySQLPool import getNewQuery
 	query = getNewQuery(mysql_db, commitOnEnd=True)
 	query.Query('SET NAMES utf8mb4;')
 	query.Query('SET CHARACTER SET utf8mb4;')
