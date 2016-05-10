@@ -130,7 +130,8 @@ def confirm_value(bot, update):
 		elif query.data == 'teach.next_msgs':
 			publish_event(bot, user, CONTEXT[user]['event_limits'][1]+1, True)
 		elif query.data == 'teach.finish':
-			bot.sendMessage(text=TEXTS['teach.finish'], chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
+			bot.editMessageText(text=TEXTS['teach.finish'], chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'])
+			#bot.sendMessage(text=TEXTS['teach.finish'], chat_id=CONTEXT[user]['chat'], reply_markup=ReplyKeyboardHide())
 			del CONTEXT[user]
 		else:
 			bot.answerCallbackQuery(query.id, text="Strange answer...")
@@ -158,16 +159,16 @@ def publish_event(bot, user, from_msg=0, direction=True):
 			CONTEXT[user]['event_dump'] = event
 			CONTEXT[user]['event_limits'] = (0,0)
 
-	to_pubplish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
+	to_publish, CONTEXT[user]['event_limits'] = CONTEXT[user]['event_dump'].telegram_representation(from_msg, direction)
 	try:
-		bot.editMessageText(text=to_pubplish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
+		print to_publish.decode('utf-8', errors='replace')
+		bot.editMessageText(text=to_publish.decode('utf-8', errors='replace'), chat_id=CONTEXT[user]['chat'], message_id=CONTEXT[user]['message'], reply_markup=keyboard, parse_mode="Markdown")
 	except TelegramError as e:
 		if str(e) == 'Bad Request: message is not modified (400)':
 			pass
 		else:
 			print e
-			print to_pubplish
-			pickle.dump(to_pubplish, open('telegram_err.pickle', 'wb'))
+			print to_publish
 			del CONTEXT[user]
 
 def get_random_event():
